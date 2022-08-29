@@ -497,7 +497,11 @@ sdm632-qrd-overlay.dtbo-base := sdm632.dtb \
 
 sdm439-mtp-overlay.dtbo-base := sdm439.dtb \
 	sda439.dtb \
-	msm8937-interposer-sdm439.dtb
+	msm8937-interposer-sdm439.dtb \
+	ytx705-sdm439.dtb \
+	ytx705-sdm429.dtb \
+	ytx705-msm8996.dtb \
+	ytx705-msm8916.dtb
 sdm439-cdp-overlay.dtbo-base := sdm439.dtb \
 	sda439.dtb \
 	msm8937-interposer-sdm439.dtb
