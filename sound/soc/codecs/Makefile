@@ -446,3 +446,6 @@ obj-$(CONFIG_SND_SOC_DBMDX)	+= dbmdx/
 
 # TAS2562
 obj-$(CONFIG_SND_SOC_TAS2562)   += tas2562/
+
+# es7243
+obj-$(CONFIG_SND_SOC_ES7243)	+= es7243.o
