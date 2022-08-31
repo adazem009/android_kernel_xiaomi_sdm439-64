@@ -1096,6 +1096,11 @@ config SND_SOC_AW8896
 	help
 	  Enables support for aw8896 series Smart PA.
 
+config SND_SOC_TAS2562
+        bool
+        default y
+
 source "sound/soc/codecs/dbmdx/Kconfig"
+source "sound/soc/codecs/tas2562/Kconfig"
 
 endmenu
