@@ -1096,4 +1096,6 @@ config SND_SOC_AW8896
 	help
 	  Enables support for aw8896 series Smart PA.
 
+source "sound/soc/codecs/dbmdx/Kconfig"
+
 endmenu
