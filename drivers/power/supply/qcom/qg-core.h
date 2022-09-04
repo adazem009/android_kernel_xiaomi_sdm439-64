@@ -133,6 +133,7 @@ struct qpnp_qg {
 	int			soh;
 	int			soc_reporting_ready;
 /*LXF_P400_A01-442/LXF_P400_B01-232/LXF_P400_C01-126 zhubolin 2018-11-28 ntc missing handler*/
+	u32                     batt_temp_adc_code;
 	int                     vbms_ibat_ua;
 	u32			fifo_done_count;
 	u32			wa_flags;
