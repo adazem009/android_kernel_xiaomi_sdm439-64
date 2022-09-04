@@ -52,7 +52,7 @@ struct led_setting {
 	u64			on_ms;
 	u64			off_ms;
 	enum led_brightness	brightness;
-	bool			blink;
+	unsigned long 			blink;
 	bool			breath;
 };
 
@@ -341,12 +341,87 @@ unlock:
 	return (rc < 0) ? rc : count;
 }
 
+static ssize_t blink_show(struct device *dev, struct device_attribute *attr,
+							char *buf)
+{
+	struct led_classdev *led_cdev = dev_get_drvdata(dev);
+	struct qpnp_led_dev *led =
+		container_of(led_cdev, struct qpnp_led_dev, cdev);
+dev_err(led->chip->dev, "lj %s:%s:%lu \n", __FUNCTION__, led->label,led->led_setting.blink );
+
+	return snprintf(buf, PAGE_SIZE, "%lu\n", led->led_setting.blink);
+
+		
+}
+
+static ssize_t blink_store(struct device *dev, struct device_attribute *attr,
+						const char *buf, size_t count)
+{
+	int rc = 0;
+	unsigned long  blink = 0;
+	unsigned long on_ms_b = 0;
+	unsigned long off_ms_b = 0;
+	struct led_classdev *led_cdev = dev_get_drvdata(dev);
+	struct qpnp_led_dev *led =
+		container_of(led_cdev, struct qpnp_led_dev, cdev);
+dev_err(led->chip->dev, "lj %s:%s:%lu \n", __FUNCTION__, led->label,led->led_setting.blink );
+
+
+	//rc = sscanf(buf, "%d", &blink);
+	rc = kstrtoul(buf, 10, &blink);
+//blink = 2;
+	//dev_err(led->chip->dev, "lj get buf %s:%s:%lu rc = %d\n", buf, led->label,blink,rc );
+	dev_err(led->chip->dev, "lj get %s:%lu rc = %d\n",  led->label,blink,rc );
+	if (rc < 0)
+		return rc;
+	
+	dev_err(led->chip->dev, "lj get buf %s:%d \n", __FUNCTION__, __LINE__ );
+
+	//mutex_lock(&led->lock);
+	if (led->led_setting.blink == blink)
+		goto unlock;
+	dev_err(led->chip->dev, "lj get buf %s:%d \n", __FUNCTION__, __LINE__ );
+	if ( 0 == blink)
+	{
+		on_ms_b = 0;
+		off_ms_b = 0;
+		dev_err(led->chip->dev, "lj get buf %s:%d \n", __FUNCTION__, __LINE__ );
+	}
+	else if ( 1 == blink)
+	{
+		on_ms_b = 2*1000*1000;
+		off_ms_b = 20*1000*1000;
+		dev_err(led->chip->dev, "lj get buf %s:%d \n", __FUNCTION__, __LINE__ );
+	} else {
+		on_ms_b = 3*1000*1000;
+		off_ms_b = 3*1000*1000;
+		dev_err(led->chip->dev, "lj get buf %s:%d \n", __FUNCTION__, __LINE__ );
+	}
+		dev_err(led->chip->dev, "lj get buf %s:%d \n", __FUNCTION__, __LINE__ );
+
+	rc = qpnp_tri_led_set_blink(led_cdev,&on_ms_b,&off_ms_b);
+		dev_err(led->chip->dev, "lj get buf %s:%d:%d \n", __FUNCTION__, __LINE__ ,rc);
+
+	if (rc < 0 )
+		dev_err(led->chip->dev, "lj %s:%s:%lu \n", __FUNCTION__, led->label,led->led_setting.blink );
+	else {
+		led->led_setting.blink = blink;
+	}
+unlock:
+//	mutex_unlock(&led->lock);
+	return (rc < 0) ? rc : count;
+}
+
 static DEVICE_ATTR(breath, 0644, breath_show, breath_store);
 static const struct attribute *breath_attrs[] = {
 	&dev_attr_breath.attr,
 	NULL
 };
-
+static DEVICE_ATTR(blink, 0644, blink_show, blink_store);
+static const struct attribute *blink_attrs[] = {
+	&dev_attr_blink.attr,
+	NULL
+};
 static int qpnp_tri_led_register(struct qpnp_tri_led_chip *chip)
 {
 	struct qpnp_led_dev *led;
@@ -377,6 +452,13 @@ static int qpnp_tri_led_register(struct qpnp_tri_led_chip *chip)
 					breath_attrs);
 			if (rc < 0) {
 				dev_err(chip->dev, "Create breath file for %s led failed, rc=%d\n",
+						led->label, rc);
+				goto err_out;
+			}
+			rc = sysfs_create_files(&led->cdev.dev->kobj,
+					blink_attrs);
+			if (rc < 0) {
+				dev_err(chip->dev, "Create blink file for %s led failed, rc=%d\n",
 						led->label, rc);
 				goto err_out;
 			}
