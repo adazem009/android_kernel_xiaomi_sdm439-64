@@ -805,80 +805,228 @@ static const struct qpnp_vadc_map_pt adcmap_batt_therm_qrd_215[] = {
 	{562,	780},
 	{558,	800}
 };
-
-/* Voltage to temperature */
-static const struct qpnp_vadc_map_pt adcmap_batt_therm_pu30[] = {
-	{1842,	-400},
-	{1838,	-380},
-	{1833,	-360},
-	{1828,	-340},
-	{1822,	-320},
-	{1816,	-300},
-	{1809,	-280},
-	{1801,	-260},
-	{1793,	-240},
-	{1784,	-220},
-	{1774,	-200},
-	{1763,	-180},
-	{1752,	-160},
-	{1739,	-140},
-	{1726,	-120},
-	{1712,	-100},
-	{1697,	-80},
-	{1680,	-60},
-	{1663,	-40},
-	{1645,	-20},
-	{1625,	0},
-	{1605,	20},
-	{1583,	40},
-	{1561,	60},
-	{1537,	80},
-	{1513,	100},
-	{1487,	120},
-	{1461,	140},
-	{1433,	160},
-	{1405,	180},
-	{1376,	200},
-	{1347,	220},
-	{1316,	240},
-	{1286,	260},
-	{1254,	280},
-	{1223,	300},
-	{1191,	320},
-	{1159,	340},
-	{1126,	360},
-	{1094,	380},
-	{1062,	400},
-	{1029,	420},
-	{997,	440},
-	{966,	460},
-	{934,	480},
-	{903,	500},
-	{873,	520},
-	{843,	540},
-	{813,	560},
-	{784,	580},
-	{756,	600},
-	{728,	620},
-	{702,	640},
-	{675,	660},
-	{650,	680},
-	{625,	700},
-	{601,	720},
-	{578,	740},
-	{556,	760},
-	{534,	780},
-	{513,	800},
-	{493,	820},
-	{474,	840},
-	{455,	860},
-	{437,	880},
-	{420,	900},
-	{403,	920},
-	{387,	940},
-	{372,	960},
-	{357,	980}
+/*LXF_P400_C01-200 zhubolin add lwn ntc 2018-11-8*/
+static const struct qpnp_vadc_map_pt adcmap_batt_therm_pu30_atl[] = {
+	{1673 ,	-400},
+	{1649 ,	-380},
+	{1623 ,	-360},
+	{1596 ,	-340},
+	{1566 ,	-320},
+	{1535 ,	-300},
+	{1502 ,	-280},
+	{1467 ,	-260},
+	{1430 ,	-240},
+	{1392 ,	-220},
+	{1352 ,	-200},
+	{1311 ,	-180},
+	{1269 ,	-160},
+	{1226 ,	-140},
+	{1182 ,	-120},
+	{1138 ,	-100},
+	{1093 ,	-80},
+	{1049 ,	-60},
+	{1004 ,	-40},
+	{960  ,	-20},
+	{917  ,	0  },
+	{874  ,	20},
+	{832  ,	40},
+	{791  ,	60},
+	{752  ,	80},
+	{713  ,	100},
+	{676  ,	120},
+	{640  ,	140},
+	{606  ,	160},
+	{573  ,	180},
+	{541  ,	200},
+	{511  ,	220},
+	{483  ,	240},
+	{455  ,	260},
+	{430  ,	280},
+	{405  ,	300},
+	{382  ,	320},
+	{360  ,	340},
+	{340  ,	360},
+	{320  ,	380},
+	{302  ,	400},
+	{285  ,	420},
+	{269  ,	440},
+	{253  ,	460},
+	{239  ,	480},
+	{225  ,	500},
+	{213  ,	520},
+	{201  ,	540},
+	{190  ,	560},
+	{179  ,	580},
+	{169  ,	600},
+	{160  ,	620},
+	{152  ,	640},
+	{143  ,	660},
+	{136  ,	680},
+	{128  ,	700},
+	{122  ,	720},
+	{115  ,	740},
+	{109  ,	760},
+	{104  ,	780},
+	{98  ,	800},
+	{93  ,	820},
+	{89  ,	840},
+	{84  ,	860},
+	{80  ,	880},
+	{76  ,	900},
+	{73  ,	920},
+	{69  ,	940},
+	{66  ,	960},
+	{63  ,	980}
 };
+/*LXF_P400_C01-200 zhubolin 2018-11-8 add lwn ntc start*/
+static const struct qpnp_vadc_map_pt adcmap_batt_therm_pu30_lwn[] = {
+	{1663 ,	-400},
+	{1639 ,	-380},
+	{1613 ,	-360},
+	{1585 ,	-340},
+	{1555 ,	-320},
+	{1523 ,	-300},
+	{1490 ,	-280},
+	{1454 ,	-260},
+	{1418 ,	-240},
+	{1379 ,	-220},
+	{1339 ,	-200},
+	{1298 ,	-180},
+	{1257 ,	-160},
+	{1214 ,	-140},
+	{1170 ,	-120},
+	{1127 ,	-100},
+	{1083 ,	-80},
+	{1039 ,	-60},
+	{995  ,	-40},
+	{952  ,	-20},
+	{909  ,	0},
+	{867  ,	20},
+	{826  ,	40},
+	{786  ,	60},
+	{747  ,	80},
+	{709  ,	100},
+	{672  ,	120},
+	{637  ,	140},
+	{603  ,	160},
+	{571  ,	180},
+	{540  ,	200},
+	{510  ,	220},
+	{482  ,	240},
+	{456  ,	260},
+	{430  ,	280},
+	{406  ,	300},
+	{383  ,	320},
+	{362  ,	340},
+	{341  ,	360},
+	{322  ,	380},
+	{304  ,	400},
+	{287  ,	420},
+	{271  ,	440},
+	{256  ,	460},
+	{242  ,	480},
+	{228  ,	500},
+	{216  ,	520},
+	{204  ,	540},
+	{193  ,	560},
+	{182  ,	580},
+	{172  ,	600},
+	{163  ,	620},
+	{155  ,	640},
+	{146  ,	660},
+	{139  ,	680},
+	{131  ,	700},
+	{125  ,	720},
+	{118  ,	740},
+	{112  ,	760},
+	{107  ,	780},
+	{101  ,	800},
+	{96   ,	820},
+	{91   ,	840},
+	{87   ,	860},
+	{83   ,	880},
+	{79   ,	900},
+	{75   ,	920},
+	{71   ,	940},
+	{68   ,	960},
+	{65   ,	980}
+};
+/*LXF_P400_C01-200 zhubolin 2018-11-8 add lwn ntc end*/
+
+#ifdef CONFIG_KERNEL_CUSTOM_P407
+static const struct qpnp_vadc_map_pt adcmap_batt_therm_pu30[] = {
+	{1663 ,	-400},
+	{1639 ,	-380},
+	{1613 ,	-360},
+	{1585 ,	-340},
+	{1555 ,	-320},
+	{1523 ,	-300},
+	{1490 ,	-280},
+	{1454 ,	-260},
+	{1418 ,	-240},
+	{1379 ,	-220},
+	{1339 ,	-200},
+	{1298 ,	-180},
+	{1257 ,	-160},
+	{1214 ,	-140},
+	{1170 ,	-120},
+	{1127 ,	-100},
+	{1083 ,	-80},
+	{1039 ,	-60},
+	{995  ,	-40},
+	{952  ,	-20},
+	{909  ,	0},
+	{867  ,	20},
+	{826  ,	40},
+	{786  ,	60},
+	{747  ,	80},
+	{709  ,	100},
+	{672  ,	120},
+	{637  ,	140},
+	{603  ,	160},
+	{571  ,	180},
+	{540  ,	200},
+	{510  ,	220},
+	{482  ,	240},
+	{456  ,	260},
+	{430  ,	280},
+	{406  ,	300},
+	{383  ,	320},
+	{362  ,	340},
+	{341  ,	360},
+	{322  ,	380},
+	{304  ,	400},
+	{287  ,	420},
+	{271  ,	440},
+	{256  ,	460},
+	{242  ,	480},
+	{228  ,	500},
+	{216  ,	520},
+	{204  ,	540},
+	{193  ,	560},
+	{182  ,	580},
+	{172  ,	600},
+	{163  ,	620},
+	{155  ,	640},
+	{146  ,	660},
+	{139  ,	680},
+	{131  ,	700},
+	{125  ,	720},
+	{118  ,	740},
+	{112  ,	760},
+	{107  ,	780},
+	{101  ,	800},
+	{96   ,	820},
+	{91   ,	840},
+	{87   ,	860},
+	{83   ,	880},
+	{79   ,	900},
+	{75   ,	920},
+	{71   ,	940},
+	{68   ,	960},
+	{65   ,	980}
+};
+#endif
 
 /* Voltage to temp0erature */
 static const struct qpnp_vadc_map_pt adcmap_batt_therm_pu400[] = {
@@ -1318,11 +1466,30 @@ int32_t qpnp_adc_batt_therm_qrd(struct qpnp_vadc_chip *chip,
 		qpnp_adc_map_voltage_temp(adcmap_batt_therm_qrd,
 			ARRAY_SIZE(adcmap_batt_therm_qrd),
 			batt_thm_voltage, &adc_chan_result->physical);
+#ifdef CONFIG_KERNEL_CUSTOM_P407			
+	} else {
+
+		qpnp_adc_scale_with_calib_param(adc_code,
+			adc_properties, chan_properties, &batt_thm_voltage);
+
+		adc_chan_result->measurement = batt_thm_voltage;
+
+		return qpnp_adc_map_voltage_temp(
+				adcmap_batt_therm_qrd,
+				ARRAY_SIZE(adcmap_batt_therm_qrd),
+				batt_thm_voltage,
+				&adc_chan_result->physical);
+#endif
 	}
 	return 0;
 }
 EXPORT_SYMBOL(qpnp_adc_batt_therm_qrd);
 
+/*LXF_P400_C01-200 zhubolin 2018-11-8 add lwn ntc start*/
+#define BATT_ATL 1
+#define BATT_LWN 2
+extern char using_battery;
+/*LXF_P400_C01-200 zhubolin 2018-11-8 add lwn ntc end*/
 int32_t qpnp_adc_batt_therm_pu30(struct qpnp_vadc_chip *chip,
 		int32_t adc_code,
 		const struct qpnp_adc_properties *adc_properties,
@@ -1344,9 +1511,22 @@ int32_t qpnp_adc_batt_therm_pu30(struct qpnp_vadc_chip *chip,
 						* 1000);
 	batt_thm_voltage = div64_s64(batt_thm_voltage,
 			adc_properties->full_scale_code * 1000);
+	/*LXF_P400_C01-200 zhubolin 2018-11-8 add lwn ntc start*/
+	if(using_battery == BATT_ATL){
+		qpnp_adc_map_voltage_temp(adcmap_batt_therm_pu30_atl,
+			ARRAY_SIZE(adcmap_batt_therm_pu30_atl),
+			batt_thm_voltage, &adc_chan_result->physical);
+	}else if(using_battery == BATT_LWN){
+		qpnp_adc_map_voltage_temp(adcmap_batt_therm_pu30_lwn,
+			ARRAY_SIZE(adcmap_batt_therm_pu30_lwn),
+			batt_thm_voltage, &adc_chan_result->physical);
+	}
+	/*LXF_P400_C01-200 zhubolin 2018-11-8 add lwn ntc end*/
+#ifdef CONFIG_KERNEL_CUSTOM_P407		
 	qpnp_adc_map_voltage_temp(adcmap_batt_therm_pu30,
 		ARRAY_SIZE(adcmap_batt_therm_pu30),
 		batt_thm_voltage, &adc_chan_result->physical);
+#endif
 	return 0;
 }
 EXPORT_SYMBOL(qpnp_adc_batt_therm_pu30);
@@ -2252,11 +2432,19 @@ int32_t qpnp_adc_qrd_215_btm_scaler(struct qpnp_vadc_chip *chip,
 
 	pr_debug("warm_temp:%d and cool_temp:%d\n", param->high_temp,
 				param->low_temp);
+#ifdef CONFIG_KERNEL_CUSTOM_P407		
+	rc = qpnp_adc_map_voltage_temp(
+		adcmap_batt_therm_qrd,
+		ARRAY_SIZE(adcmap_batt_therm_qrd),
+		(param->low_temp),
+		&low_output);
+#else
 	rc = qpnp_adc_map_temp_voltage(
 		adcmap_batt_therm_qrd_215,
 		ARRAY_SIZE(adcmap_batt_therm_qrd_215),
 		(param->low_temp),
 		&low_output);
+#endif
 	if (rc) {
 		pr_debug("low_temp mapping failed with %d\n", rc);
 		return rc;
@@ -2266,12 +2454,19 @@ int32_t qpnp_adc_qrd_215_btm_scaler(struct qpnp_vadc_chip *chip,
 	low_output *= btm_param.dy;
 	low_output = div64_s64(low_output, btm_param.adc_vref);
 	low_output += btm_param.adc_gnd;
-
+#ifdef CONFIG_KERNEL_CUSTOM_P407		
+	rc = qpnp_adc_map_voltage_temp(
+		adcmap_batt_therm_qrd,
+		ARRAY_SIZE(adcmap_batt_therm_qrd),
+		(param->high_temp),
+		&high_output);
+#else
 	rc = qpnp_adc_map_temp_voltage(
 		adcmap_batt_therm_qrd_215,
 		ARRAY_SIZE(adcmap_batt_therm_qrd_215),
 		(param->high_temp),
 		&high_output);
+#endif
 	if (rc) {
 		pr_debug("high temp mapping failed with %d\n", rc);
 		return rc;
