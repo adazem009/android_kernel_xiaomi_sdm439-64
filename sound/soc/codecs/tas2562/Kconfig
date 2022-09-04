@@ -1,0 +1,17 @@
+
+menuconfig SND_SOC_TAS2562
+	tristate "Texas Instruments TAS2562 SmartAmp(R)"
+
+if SND_SOC_TAS2562
+config TAS2562_REGMAP
+    bool "Use of RegMap API"
+
+config TAS2562_CODEC
+    bool "Codec Driver support"
+
+#config TAS2562_MISC
+#    bool "Misc Driver support"
+
+#config TAS2558_CODEC
+
+endif # SND_SOC_TAS2562

@@ -1096,4 +1096,26 @@ config SND_SOC_AW8896
 	help
 	  Enables support for aw8896 series Smart PA.
 
+#/* LXF_P407_A01-12 add by humingming 20190124 begin */
+config SND_SOC_TAS2562
+	tristate "Texas Instruments TAS2562 SmartAmp(R)"
+
+if SND_SOC_TAS2562
+config TAS2562_REGMAP
+    bool "Use of RegMap API"
+
+config TAS2562_CODEC
+    bool "Codec Driver support"
+
+config TAS2562_MISC
+    bool "Misc Driver support"
+
+#config TAS2558_CODEC
+
+endif # SND_SOC_TAS2562
+#/* LXF_P407_A01-12 add by humingming 20190124 end */
+
+#/* LXF_P407_A01-12 add by humingming 20190129 start */
+source "sound/soc/codecs/dbmdx/Kconfig"
+#/* LXF_P407_A01-12 add by humingming 20190129 end */
 endmenu

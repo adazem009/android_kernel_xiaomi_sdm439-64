@@ -436,7 +436,12 @@ obj-$(CONFIG_SND_SOC_WM9712)	+= snd-soc-wm9712.o
 obj-$(CONFIG_SND_SOC_WM9713)	+= snd-soc-wm9713.o
 obj-$(CONFIG_SND_SOC_WM_ADSP)	+= snd-soc-wm-adsp.o
 obj-$(CONFIG_SND_SOC_WM_HUBS)	+= snd-soc-wm-hubs.o
-
+#/* LXF_P407_A01-12 add by humingming 20190124 begin */
+obj-$(CONFIG_SND_SOC_TAS2562) += tas2562/
+#/* LXF_P407_A01-12 add by humingming 20190124 end */
+#/* LXF_P407_A01-12 add by humingming 20190129 start */
+obj-$(CONFIG_SND_SOC_DBMDX) += dbmdx/
+#/* LXF_P407_A01-12 add by humingming 20190129 end */
 # Amp
 obj-$(CONFIG_SND_SOC_MAX9877)	+= snd-soc-max9877.o
 obj-$(CONFIG_SND_SOC_MAX98504)	+= snd-soc-max98504.o
