@@ -621,6 +621,10 @@ config MSM_RDBG
 	  for a debugger running on a host PC to communicate with a remote
 	  stub running on peripheral subsystems such as the ADSP, MODEM etc.
 
+#add by qiuyongwei for factory runintest2 begin
+source  "drivers/char/i2c_devinfo/Kconfig"
+#add by qiuyongwei for factory runintest2 end
+
 endmenu
 
 config OKL4_PIPE
