@@ -1214,7 +1214,11 @@ int subsystem_restart_dev(struct subsys_device *dev)
 		pr_err("%s crashed during a system poweroff/shutdown.\n", name);
 		return -EBUSY;
 	}
-
+//###lc mike_zhu  for ssr 20190214 start 
+#ifndef CONFIG_BUILD_FACTORY
+	dev->restart_level = 1;//for ssr_reboot --lc mike_zhu 20171213
+#endif
+//###lc mike_zhu  for ssr 20190214 end
 	pr_info("Restart sequence requested for %s, restart_level = %s.\n",
 		name, restart_levels[dev->restart_level]);
 
