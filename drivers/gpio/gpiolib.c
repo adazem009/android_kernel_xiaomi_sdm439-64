@@ -2244,12 +2244,14 @@ static int _gpiod_direction_output_raw(struct gpio_desc *desc, int value)
 	int ret;
 
 	/* GPIOs used for IRQs shall not be set as output */
-	if (test_bit(FLAG_USED_AS_IRQ, &desc->flags)) {
+	/* LXF_P400_A01-50 add by panfei 20180918  begin */
+	/*if (test_bit(FLAG_USED_AS_IRQ, &desc->flags)) {
 		gpiod_err(desc,
 			  "%s: tried to set a GPIO tied to an IRQ as output\n",
 			  __func__);
 		return -EIO;
-	}
+	}*/
+	/* LXF_P400_A01-50 add by panfei 20180918  end */
 
 	if (test_bit(FLAG_OPEN_DRAIN, &desc->flags)) {
 		/* First see if we can enable open drain in hardware */
