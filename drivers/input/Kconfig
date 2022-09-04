@@ -200,6 +200,18 @@ config INPUT_KEYCOMBO
 	---help---
 	  Say Y here if you want to take action when some keys are pressed;
 
+# LXF_P400 add by liuyang 20181027 begin
+config INPUT_HALL_SENSOR
+    bool "input hall sensor"
+	depends on INPUT
+	select INPUT_KEYCOMBO
+	---help---
+	  Say Y here and a list of supported hall sensor will be displayed;
+
+# LXF_P400 add by liuyang 20181027 end
+
+
+
 comment "Input Device Drivers"
 
 source "drivers/input/keyboard/Kconfig"
