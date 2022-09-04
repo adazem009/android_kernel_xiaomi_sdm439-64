@@ -121,6 +121,9 @@ struct qpnp_qg {
 	bool			parallel_enabled;
 	bool			usb_present;
 	bool			charge_full;
+/*LXF_P400_A01-442/LXF_P400_B01-232/LXF_P400_C01-126 zhubolin 2018-11-28 ntc missing handler*/
+	bool 			batt_ntc_missing;
+	bool 			report_zero;
 	int			charge_status;
 	int			charge_type;
 	int			chg_iterm_ma;
@@ -129,7 +132,8 @@ struct qpnp_qg {
 	int			esr_nominal;
 	int			soh;
 	int			soc_reporting_ready;
-	int			vbms_ibat_ua;
+/*LXF_P400_A01-442/LXF_P400_B01-232/LXF_P400_C01-126 zhubolin 2018-11-28 ntc missing handler*/
+	int                     vbms_ibat_ua;
 	u32			fifo_done_count;
 	u32			wa_flags;
 	u32			seq_no;

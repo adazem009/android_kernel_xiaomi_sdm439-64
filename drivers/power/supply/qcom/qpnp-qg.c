@@ -40,6 +40,16 @@
 #include "qg-battery-profile.h"
 #include "qg-defs.h"
 
+/*LXF_P400_C01-196 zhubolin 2018-11-8*/
+#ifdef pr_debug
+#undef pr_debug
+#define pr_debug pr_err
+#endif
+//LXF_P400_B01-1812 zhubolin 20181027 Y-cable support bringup
+#ifndef CONFIG_KERNEL_CUSTOM_P407
+extern void check_y_cable_status(void);
+extern int ycable_need_support;
+#endif
 static int qg_debug_mask;
 module_param_named(
 	debug_mask, qg_debug_mask, int, 0600
@@ -1534,6 +1544,11 @@ static int qg_get_battery_capacity(struct qpnp_qg *chip, int *soc)
 		*soc = FULL_SOC;
 		return 0;
 	}
+	/*LXF_P400_A01-442/LXF_P400_B01-232/LXF_P400_C01-126 zhubolin 2018-11-28 ntc missing handler*/
+	if(chip->report_zero) {
+		*soc = EMPTY_SOC;
+		return 0;
+	}
 
 	mutex_lock(&chip->soc_lock);
 
@@ -1730,6 +1745,18 @@ static int qg_psy_get_property(struct power_supply *psy,
 		break;
 	case POWER_SUPPLY_PROP_TEMP:
 		rc = qg_get_battery_temp(chip, &pval->intval);
+		/*LXF_P400_A01-442/LXF_P400_B01-232/LXF_P400_C01-126 zhubolin 2018-11-28 ntc missing handler start*/
+		if(true == chip->batt_ntc_missing)
+		{
+			pr_err("Force set battery temp to -20 degree\n");
+
+			if(is_usb_present(chip)){
+				chip->report_zero = true;
+				qg_get_battery_capacity(chip, &pval->intval);
+			}
+			pval->intval = -200;
+		}
+		/*LXF_P400_A01-442/LXF_P400_B01-232/LXF_P400_C01-126 zhubolin 2018-11-28 ntc missing handler end*/
 		break;
 	case POWER_SUPPLY_PROP_RESISTANCE_ID:
 		pval->intval = chip->batt_id_ohm;
@@ -1905,6 +1932,21 @@ static int qg_charge_full_update(struct qpnp_qg *chip)
 	}
 	chip->recharge_soc = recharge_soc;
 
+//lj modify for recharge
+#ifdef CONFIG_KERNEL_CUSTOM_P407
+	rc = power_supply_get_property(chip->batt_psy,
+			POWER_SUPPLY_PROP_CAPACITY, &prop);
+	if (rc < 0 || prop.intval < 0) {
+		pr_debug("Failed to get recharge-soc\n");
+		return 0;
+	} else {
+	    if (chip->msoc != prop.intval) {
+			pr_err("for recharge chip->msoc:%d prop.intval:%d\n", chip->msoc, prop.intval);
+			chip->msoc = prop.intval;
+	    }
+	}
+#endif
+	
 	qg_dbg(chip, QG_DEBUG_STATUS, "msoc=%d health=%d charge_full=%d charge_done=%d\n",
 				chip->msoc, health, chip->charge_full,
 				chip->charge_done);
@@ -2009,6 +2051,11 @@ static int qg_usb_status_update(struct qpnp_qg *chip)
 			"USB status changed Present=%d\n",
 							usb_present);
 		qg_scale_soc(chip, false);
+//LXF_P400_B01-1812 zhubolin 20181027 Y-cable support bringup
+#ifndef CONFIG_KERNEL_CUSTOM_P407
+		if((0 == usb_present) && /*ycable_need_support*/ false)
+			check_y_cable_status();
+#endif
 	}
 
 	chip->usb_present = usb_present;
@@ -2468,13 +2515,20 @@ static int get_batt_id_ohm(struct qpnp_qg *chip, u32 *batt_id_ohm)
 
 	return 0;
 }
-
+/*LXF_P400_C01-200 zhubolin 2018-11-8 add lwn ntc start*/
+#define BATT_ATL 1
+#define BATT_LWN 2
+char using_battery = 0;
+/*LXF_P400_C01-200 zhubolin 2018-11-8 add lwn ntc end*/
 static int qg_load_battery_profile(struct qpnp_qg *chip)
 {
 	struct device_node *node = chip->dev->of_node;
 	struct device_node *batt_node, *profile_node;
 	int rc;
-
+	/*LXF_P400_C01-200 zhubolin 2018-11-8 add lwn ntc*/
+#ifndef CONFIG_KERNEL_CUSTOM_P407
+	const char *battery_atl,*battery_lwn;
+#endif
 	batt_node = of_find_node_by_name(node, "qcom,battery-data");
 	if (!batt_node) {
 		pr_err("Batterydata not available\n");
@@ -2495,7 +2549,34 @@ static int qg_load_battery_profile(struct qpnp_qg *chip)
 		pr_err("Failed to detect battery type rc:%d\n", rc);
 		return rc;
 	}
+#ifdef CONFIG_KERNEL_CUSTOM_P407
+	pr_err("lj now run p407 to detect battery type \n");
+#else
+/*LXF_P400_C01-200 zhubolin 2018-11-8 add lwn ntc start*/
+	rc = of_property_read_string(node, "qcom,battery-atl",
+				&battery_atl);
+	if (rc < 0) {
+		pr_err("Failed to get atl string rc:%d\n", rc);
+		return rc;
+	}
 
+	rc = of_property_read_string(node, "qcom,battery-lwn",
+				&battery_lwn);
+	if (rc < 0) {
+		pr_err("Failed to get lwn string rc:%d\n", rc);
+		return rc;
+	}
+
+	if(0 == strcmp(battery_atl,chip->bp.batt_type_str))
+	{
+		pr_err("P400 using atl battery");
+		using_battery = BATT_ATL;
+	}else if(0 == strcmp(battery_lwn,chip->bp.batt_type_str)){
+		using_battery = BATT_LWN;
+		pr_err("P400 using lwn battery");
+	}
+/*LXF_P400_C01-200 zhubolin 2018-11-8 add lwn ntc end*/
+#endif
 	rc = qg_batterydata_init(profile_node);
 	if (rc < 0) {
 		pr_err("Failed to initialize battery-profile rc=%d\n", rc);
@@ -3796,6 +3877,11 @@ static int qpnp_qg_probe(struct platform_device *pdev)
 	chip->soh = -EINVAL;
 	chip->esr_actual = -EINVAL;
 	chip->esr_nominal = -EINVAL;
+	/*LXF_P400_A01-442/LXF_P400_B01-232/LXF_P400_C01-126 zhubolin 2018-11-28 ntc missing handler start*/
+	chip->batt_ntc_missing = false;
+	chip->batt_temp_adc_code = 0;
+	chip->report_zero = false;
+	/*LXF_P400_A01-442/LXF_P400_B01-232/LXF_P400_C01-126 zhubolin 2018-11-28 ntc missing handler end*/
 
 	rc = qg_alg_init(chip);
 	if (rc < 0) {

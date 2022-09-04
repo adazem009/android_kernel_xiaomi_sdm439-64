@@ -358,13 +358,13 @@ static enum power_supply_property bq27530_battery_props[] = {
 };
 
 static enum power_supply_property bq27541_battery_props[] = {
-	POWER_SUPPLY_PROP_STATUS,
+//	POWER_SUPPLY_PROP_STATUS,
 	POWER_SUPPLY_PROP_PRESENT,
 	POWER_SUPPLY_PROP_VOLTAGE_NOW,
 	POWER_SUPPLY_PROP_CURRENT_NOW,
 	POWER_SUPPLY_PROP_CAPACITY,
 	POWER_SUPPLY_PROP_CAPACITY_LEVEL,
-	POWER_SUPPLY_PROP_TEMP,
+//	POWER_SUPPLY_PROP_TEMP,
 	POWER_SUPPLY_PROP_TIME_TO_EMPTY_NOW,
 	POWER_SUPPLY_PROP_TECHNOLOGY,
 	POWER_SUPPLY_PROP_CHARGE_FULL,
@@ -432,6 +432,9 @@ static struct {
 static DEFINE_MUTEX(bq27xxx_list_lock);
 static LIST_HEAD(bq27xxx_battery_devices);
 
+extern int i2c_devinfo_device_write(char *buf);   //申明i2c检测信息节点写入接口
+bool g_is_boot_first_time = 1;
+	
 static int poll_interval_param_set(const char *val, const struct kernel_param *kp)
 {
 	struct bq27xxx_device_info *di;
@@ -737,9 +740,17 @@ void bq27xxx_battery_update(struct bq27xxx_device_info *di)
 	bool has_singe_flag = di->chip == BQ27000 || di->chip == BQ27010;
 
 	cache.flags = bq27xxx_read(di, BQ27XXX_REG_FLAGS, has_singe_flag);
-	if ((cache.flags & 0xff) == 0xff)
+	if ((cache.flags & 0xff) == 0xff) {
 		cache.flags = -1; /* read error */
+		i2c_devinfo_device_write("DLJ:0;");
+		printk("bq27xxx_battery_update fail\n");
+	}
 	if (cache.flags >= 0) {
+		if (g_is_boot_first_time) {
+			i2c_devinfo_device_write("DLJ:1;");
+			g_is_boot_first_time = 0;
+			printk("bq27xxx_battery_update ok once\n");
+		}
 		cache.temperature = bq27xxx_battery_read_temperature(di);
 		if (has_ci_flag && (cache.flags & BQ27000_FLAG_CI)) {
 			dev_info_once(di->dev, "battery is not calibrated! ignoring capacity values\n");
@@ -827,7 +838,7 @@ static int bq27xxx_battery_current(struct bq27xxx_device_info *di,
 
 	return 0;
 }
-
+#if 0
 static int bq27xxx_battery_status(struct bq27xxx_device_info *di,
 				  union power_supply_propval *val)
 {
@@ -855,6 +866,7 @@ static int bq27xxx_battery_status(struct bq27xxx_device_info *di,
 
 	return 0;
 }
+#endif
 
 static int bq27xxx_battery_capacity_level(struct bq27xxx_device_info *di,
 					  union power_supply_propval *val)
@@ -902,6 +914,7 @@ static int bq27xxx_battery_voltage(struct bq27xxx_device_info *di,
 	}
 
 	val->intval = volt * 1000;
+//printk("lj2: bq27xxx_battery_voltage:%d   ===\n", val->intval);
 
 	return 0;
 }
@@ -935,11 +948,11 @@ static int bq27xxx_battery_get_property(struct power_supply *psy,
 		return -ENODEV;
 
 	switch (psp) {
-	case POWER_SUPPLY_PROP_STATUS:
-		ret = bq27xxx_battery_status(di, val);
-		break;
+	//case POWER_SUPPLY_PROP_STATUS:
+	//	ret = bq27xxx_battery_status(di, val);
+	//	break;
 	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
-		ret = bq27xxx_battery_voltage(di, val);
+			ret = bq27xxx_battery_voltage(di, val);
 		break;
 	case POWER_SUPPLY_PROP_PRESENT:
 		val->intval = di->cache.flags < 0 ? 0 : 1;

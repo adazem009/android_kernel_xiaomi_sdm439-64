@@ -47,7 +47,7 @@ static ssize_t power_supply_show_property(struct device *dev,
 		"Unknown", "Battery", "UPS", "Mains", "USB", "USB_DCP",
 		"USB_CDP", "USB_ACA", "USB_HVDCP", "USB_HVDCP_3", "USB_PD",
 		"Wireless", "USB_FLOAT", "BMS", "Parallel", "Main", "Wipower",
-		"TYPEC", "TYPEC_UFP", "TYPEC_DFP"
+		"TYPEC", "TYPEC_UFP", "TYPEC_DFP", "POGO" //LXF_P400_B01-1554 zhubolin 2019-2-19 Add POGO type for real_charger_type
 	};
 	static char *status_text[] = {
 		"Unknown", "Charging", "Discharging", "Not charging", "Full"

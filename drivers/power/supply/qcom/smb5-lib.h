@@ -82,11 +82,35 @@ enum print_reason {
 #define SDP_100_MA			100000
 #define SDP_CURRENT_UA			500000
 #define CDP_CURRENT_UA			1500000
-#define DCP_CURRENT_UA			1500000
+#define DCP_CURRENT_UA			2000000
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup start*/
+//Add POGO charging support
+#define POGO_SUPPORT
+#ifdef POGO_SUPPORT
+	#define POGO_CURRENT_UA			1500000
+//LXF_P400_B01-1812 zhubolin 20181027 Y-cable support bringup
+#ifndef CONFIG_KERNEL_CUSTOM_P407
+	#define THUB_CURRENT_UA			2000000
+	#define THUB_PLUGIN			1
+#endif
+#endif
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup end*/
 #define HVDCP_CURRENT_UA		3000000
 #define TYPEC_DEFAULT_CURRENT_UA	900000
 #define TYPEC_MEDIUM_CURRENT_UA		1500000
 #define TYPEC_HIGH_CURRENT_UA		3000000
+
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup start*/
+#ifdef POGO_SUPPORT
+	#ifndef POGO_DEBUG
+		#define POGO_DEBUG
+	#endif
+#endif
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup end*/
+
+#ifndef CONFIG_KERNEL_CUSTOM_P407
+#define THERMAL_CONFIG_FB 1 //lct add 20171116
+#endif
 
 enum smb_mode {
 	PARALLEL_MASTER = 0,
@@ -318,6 +342,9 @@ struct smb_charger {
 	struct power_supply		*bms_psy;
 	struct power_supply		*usb_main_psy;
 	struct power_supply		*usb_port_psy;
+#ifdef CONFIG_KERNEL_CUSTOM_P407
+	struct power_supply		*bq27541_psy;
+#endif
 	enum power_supply_type		real_charger_type;
 
 	/* notifiers */
@@ -355,6 +382,7 @@ struct smb_charger {
 	struct delayed_work	uusb_otg_work;
 	struct delayed_work	bb_removal_work;
 	struct delayed_work	usbov_dbc_work;
+	struct delayed_work	arb_monitor_work;
 
 	/* alarm */
 	struct alarm		moisture_protection_alarm;
@@ -372,6 +400,7 @@ struct smb_charger {
 
 	/* cached status */
 	bool			system_suspend_supported;
+	int			usbin_ovp_irq;	//add litao1 20181113 LXF_P400_B01-303
 	int			boost_threshold_ua;
 	int			system_temp_level;
 	int			thermal_levels;
@@ -415,6 +444,10 @@ struct smb_charger {
 	int			cc_soc_ref;
 	int			last_cc_soc;
 
+#ifdef THERMAL_CONFIG_FB
+	struct notifier_block notifier;
+	struct work_struct fb_notify_work;
+#endif
 	/* workaround flag */
 	u32			wa_flags;
 	int			boost_current_ua;
@@ -438,6 +471,16 @@ struct smb_charger {
 	u32			headroom_mode;
 	bool			flash_init_done;
 	bool			flash_active;
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup start*/
+#ifdef POGO_SUPPORT
+	/* pogo */
+	u32			usb_state_gpio;
+	u32			pogo_state_gpio;
+	u32			otg_enable_gpio;
+	u32			pogo_enable_gpio;
+	u32			power_off_mode;
+#endif
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup end*/
 };
 
 int smblib_read(struct smb_charger *chg, u16 addr, u8 *val);
@@ -589,6 +632,11 @@ int smblib_set_prop_pr_swap_in_progress(struct smb_charger *chg,
 int smblib_get_prop_from_bms(struct smb_charger *chg,
 				enum power_supply_property psp,
 				union power_supply_propval *val);
+#ifdef CONFIG_KERNEL_CUSTOM_P407
+int smblib_get_prop_from_bq27541(struct smb_charger *chg,
+				enum power_supply_property psp,
+				union power_supply_propval *val);
+#endif
 int smblib_stat_sw_override_cfg(struct smb_charger *chg, bool override);
 int smblib_configure_wdog(struct smb_charger *chg, bool enable);
 int smblib_force_vbus_voltage(struct smb_charger *chg, u8 val);

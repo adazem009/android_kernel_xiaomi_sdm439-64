@@ -311,7 +311,12 @@ int qg_write_monotonic_soc(struct qpnp_qg *chip, int msoc)
 
 int qg_get_battery_temp(struct qpnp_qg *chip, int *temp)
 {
+	/*LXF_P400_A01-442/LXF_P400_B01-232/LXF_P400_C01-126 zhubolin 2018-11-28 ntc missing handler start*/
+#ifdef CONFIG_KERNEL_CUSTOM_P407
 	int rc = 0;
+#else
+	int rc = 0,count = 1;
+#endif
 	struct qpnp_vadc_result result;
 
 	if (chip->battery_missing) {
@@ -319,16 +324,38 @@ int qg_get_battery_temp(struct qpnp_qg *chip, int *temp)
 		return 0;
 	}
 
-	rc = qpnp_vadc_read(chip->vadc_dev, VADC_BAT_THERM_PU2, &result);
+#ifdef CONFIG_KERNEL_CUSTOM_P407
+	rc = qpnp_vadc_read(chip->vadc_dev, VADC_BAT_THERM_PU1, &result);
+#else
+	do{
+		rc = qpnp_vadc_read(chip->vadc_dev, VADC_BAT_THERM_PU1, &result);
+		if(result.adc_code <= 28000){
+			chip->batt_ntc_missing = false;
+			break;
+		}
+		pr_err("batt_temp = %lld adc_code = %d\n",
+				result.physical, result.adc_code);
+	}while(count--);
+
+	if(result.adc_code > 28000){
+		pr_err("battery ntc missing\n");
+		chip->batt_ntc_missing = true;
+	}
+#endif		
+	/*LXF_P400_A01-442/LXF_P400_B01-232/LXF_P400_C01-126 zhubolin 2018-11-28 ntc missing handler end*/
 	if (rc) {
 		pr_err("Failed reading adc channel=%d, rc=%d\n",
-					VADC_BAT_THERM_PU2, rc);
+					VADC_BAT_THERM_PU1, rc);
 		return rc;
 	}
 	pr_debug("batt_temp = %lld meas = 0x%llx\n",
 			result.physical, result.measurement);
 
 	*temp = (int)result.physical;
+	/// tempator for bring-up power up
+         #ifdef CONFIG_KERNEL_CUSTOM_P407
+      	//*temp =250 ;
+         #endif
 
 	return rc;
 }

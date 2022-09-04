@@ -20,6 +20,8 @@
 #include <linux/pmic-voter.h>
 #include <linux/of_batterydata.h>
 #include <linux/alarmtimer.h>
+#include <linux/gpio.h>
+#include <linux/of_gpio.h>
 #include "smb5-lib.h"
 #include "smb5-reg.h"
 #include "battery.h"
@@ -27,11 +29,25 @@
 #include "step-chg-jeita.h"
 #include "storm-watch.h"
 #include "schgm-flash.h"
+#include <linux/gpio.h>
+#include <linux/of_gpio.h>
+#include <linux/string.h>
 
+#ifndef CONFIG_KERNEL_CUSTOM_P407
+/*LXF_P400_C01-196 zhubolin 2018-11-8 start*/
+#ifdef pr_debug
+#undef pr_debug
+#define pr_debug pr_err
+#endif
+#endif
+bool g_charger_present;
 #define smblib_err(chg, fmt, ...)		\
 	pr_err("%s: %s: " fmt, chg->name,	\
 		__func__, ##__VA_ARGS__)	\
 
+
+
+#ifdef CONFIG_KERNEL_CUSTOM_P407
 #define smblib_dbg(chg, reason, fmt, ...)			\
 	do {							\
 		if (*chg->debug_mask & (reason))		\
@@ -41,12 +57,29 @@
 			pr_debug("%s: %s: " fmt, chg->name,	\
 				__func__, ##__VA_ARGS__);	\
 	} while (0)
+#else
+#define smblib_dbg(chg, reason, fmt, ...)			\
+	do {							\
+		if (*chg->debug_mask & (reason))		\
+			pr_err("%s: %s: " fmt, chg->name,	\
+				__func__, ##__VA_ARGS__);	\
+		else						\
+			pr_err("%s: %s: " fmt, chg->name,	\
+				__func__, ##__VA_ARGS__);	\
+	} while (0)
+#endif
+/*LXF_P400_C01-196 zhubolin 2018-11-8 end*/
 
 #define typec_rp_med_high(chg, typec_mode)			\
 	((typec_mode == POWER_SUPPLY_TYPEC_SOURCE_MEDIUM	\
 	|| typec_mode == POWER_SUPPLY_TYPEC_SOURCE_HIGH)	\
 	&& !chg->typec_legacy)
 
+//LXF_P400_B01-1812 zhubolin 20181027 Y-cable support bringup
+#ifndef CONFIG_KERNEL_CUSTOM_P407
+extern int read_otg_id_adc(void);
+extern int ycable_need_support;
+#endif
 int smblib_read(struct smb_charger *chg, u16 addr, u8 *val)
 {
 	unsigned int value;
@@ -80,7 +113,17 @@ int smblib_masked_write(struct smb_charger *chg, u16 addr, u8 mask, u8 val)
 {
 	return regmap_update_bits(chg->regmap, addr, mask, val);
 }
-
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup start*/
+#ifdef POGO_SUPPORT
+void aicl_status_dump(struct smb_charger *chg)
+{
+	u8 buf[5];
+	smblib_batch_read(chg, ICL_MAX_STATUS_REG, buf, 5);
+	pr_info("AICL STATUS(%x): %x %x %x %x %x", ICL_MAX_STATUS_REG, 
+		buf[0], buf[1], buf[2], buf[3], buf[4]);
+}
+#endif
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup end*/
 int smblib_get_jeita_cc_delta(struct smb_charger *chg, int *cc_delta_ua)
 {
 	int rc, cc_minus_ua;
@@ -239,6 +282,14 @@ enum {
 	FLOAT,
 	HVDCP2,
 	HVDCP3,
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup*/
+#ifdef POGO_SUPPORT
+	POGO,
+//LXF_P400_B01-1812 zhubolin 20181027 Y-cable support bringup
+#ifndef CONFIG_KERNEL_CUSTOM_P407
+	THUB,
+#endif
+#endif
 	MAX_TYPES
 };
 
@@ -283,6 +334,23 @@ static const struct apsd_result smblib_apsd_results[] = {
 		.bit	= DCP_CHARGER_BIT | QC_3P0_BIT,
 		.pst	= POWER_SUPPLY_TYPE_USB_HVDCP_3,
 	},
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup start*/
+#ifdef POGO_SUPPORT
+	[POGO] = {
+		.name	= "POGO",
+		.bit	= APSD_RESULT_STATUS_7_BIT | SDP_CHARGER_BIT,
+		.pst	= POWER_SUPPLY_TYPE_POGO
+	},
+//LXF_P400_B01-1812 zhubolin 20181027 Y-cable support bringup
+#ifndef CONFIG_KERNEL_CUSTOM_P407
+	[THUB] = {
+		.name	= "THUB",
+		.bit	= APSD_RESULT_STATUS_7_BIT | SDP_CHARGER_BIT,
+		.pst	= POWER_SUPPLY_TYPE_THUB
+	},
+#endif
+#endif
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup end*/
 };
 
 static const struct apsd_result *smblib_get_apsd_result(struct smb_charger *chg)
@@ -290,6 +358,12 @@ static const struct apsd_result *smblib_get_apsd_result(struct smb_charger *chg)
 	int rc, i;
 	u8 apsd_stat, stat;
 	const struct apsd_result *result = &smblib_apsd_results[UNKNOWN];
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup start*/
+#ifdef POGO_SUPPORT
+	int usb_path_state = gpio_get_value(chg->usb_state_gpio) ? 0:1;
+	int pogo_path_state = gpio_get_value(chg->pogo_state_gpio) ? 0:1;
+#endif
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup end*/
 
 	rc = smblib_read(chg, APSD_STATUS_REG, &apsd_stat);
 	if (rc < 0) {
@@ -319,7 +393,18 @@ static const struct apsd_result *smblib_get_apsd_result(struct smb_charger *chg)
 		if (result != &smblib_apsd_results[HVDCP3])
 			result = &smblib_apsd_results[HVDCP2];
 	}
-
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup start*/
+#ifdef POGO_SUPPORT
+	//if ((result->bit == SDP_CHARGER_BIT || result->bit == CDP_CHARGER_BIT) && (usb_path_state == 0) && (pogo_path_state == 1))
+	if ((usb_path_state == 0) && (pogo_path_state == 1))
+		result = &smblib_apsd_results[POGO];
+//LXF_P400_B01-1812 zhubolin 20181027 Y-cable support bringup
+#ifndef CONFIG_KERNEL_CUSTOM_P407
+	if( (THUB_PLUGIN == read_otg_id_adc()) && /*ycable_need_support*/ false)
+		result = &smblib_apsd_results[THUB];
+#endif
+#endif
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup end*/
 	return result;
 }
 
@@ -601,7 +686,25 @@ int smblib_get_prop_from_bms(struct smb_charger *chg,
 
 	return rc;
 }
+#ifdef CONFIG_KERNEL_CUSTOM_P407
+int smblib_get_prop_from_bq27541(struct smb_charger *chg,
+				enum power_supply_property psp,
+				union power_supply_propval *val)
+{
+	int rc;
 
+	if (!chg->bq27541_psy){
+		printk("lj2: smblib_get_prop_from_bq27541 !chg->bq27541_psy!!!!!\n");
+		return -EINVAL;
+	} else {
+	//printk("lj2: smblib_get_prop_from_bq27541 !chg->bq27541_psy  ok!!!!!!!\n");
+		}
+
+	rc = power_supply_get_property(chg->bq27541_psy, psp, val);
+
+	return rc;
+}
+#endif
 int smblib_configure_hvdcp_apsd(struct smb_charger *chg, bool enable)
 {
 	int rc;
@@ -688,8 +791,8 @@ static const struct apsd_result *smblib_update_usb_type(struct smb_charger *chg)
 			chg->real_charger_type = apsd_result->pst;
 	}
 
-	smblib_dbg(chg, PR_MISC, "APSD=%s PD=%d\n",
-					apsd_result->name, chg->pd_active);
+	smblib_dbg(chg, PR_MISC, "real_charger_type=%d APSD=%s PD=%d\n",
+					chg->real_charger_type, apsd_result->name, chg->pd_active);
 	return apsd_result;
 }
 
@@ -991,7 +1094,12 @@ int smblib_set_icl_current(struct smb_charger *chg, int icl_ua)
 			goto out;
 		}
 	} else {
-		set_sdp_current(chg, 100000);
+		//set_sdp_current(chg, 100000);
+#ifdef CONFIG_KERNEL_CUSTOM_P407
+		//set_sdp_current(chg, 100000);
+	    if (chg->real_charger_type == POWER_SUPPLY_TYPE_USB_FLOAT)
+              icl_ua = 500000;
+#endif
 		rc = smblib_set_charge_param(chg, &chg->param.usb_icl, icl_ua);
 		if (rc < 0) {
 			smblib_err(chg, "Couldn't set HC ICL rc=%d\n", rc);
@@ -1003,7 +1111,19 @@ int smblib_set_icl_current(struct smb_charger *chg, int icl_ua)
 		 * Micro USB mode follows ICL register independent of override
 		 * bit, configure override only for typeC mode.
 		 */
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup start*/
+		#ifdef POGO_SUPPORT
+//LXF_P400_B01-1812 zhubolin 20181027 Y-cable support bringup
+#ifndef CONFIG_KERNEL_CUSTOM_P407
+		if (chg->connector_type == POWER_SUPPLY_CONNECTOR_TYPEC || chg->real_charger_type == POWER_SUPPLY_TYPE_POGO ||
+			chg->real_charger_type == POWER_SUPPLY_TYPE_THUB)
+#else
+		if (chg->connector_type == POWER_SUPPLY_CONNECTOR_TYPEC || chg->real_charger_type == POWER_SUPPLY_TYPE_POGO)
+#endif
+		#else
 		if (chg->connector_type == POWER_SUPPLY_CONNECTOR_TYPEC)
+		#endif
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup end*/
 			override = true;
 	}
 
@@ -1029,8 +1149,24 @@ set_mode:
 	}
 
 	/* Re-run AICL */
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup start*/
+#ifdef POGO_SUPPORT
+	if (chg->real_charger_type != POWER_SUPPLY_TYPE_USB) {
+//LXF_P400_B01-1812 zhubolin 20181027 Y-cable support bringup
+#ifndef CONFIG_KERNEL_CUSTOM_P407
+		if(chg->real_charger_type == POWER_SUPPLY_TYPE_POGO || chg->real_charger_type == POWER_SUPPLY_TYPE_THUB)
+#else
+		if(chg->real_charger_type == POWER_SUPPLY_TYPE_POGO)
+#endif
+			rc = smblib_run_aicl(chg, RESTART_AICL);
+		else
+			rc = smblib_run_aicl(chg, RERUN_AICL);
+	}
+#else
 	if (chg->real_charger_type != POWER_SUPPLY_TYPE_USB)
 		rc = smblib_run_aicl(chg, RERUN_AICL);
+#endif
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup end*/
 out:
 	return rc;
 }
@@ -1298,7 +1434,23 @@ int smblib_vconn_regulator_is_enabled(struct regulator_dev *rdev)
 
 	return (cmd & VCONN_EN_VALUE_BIT) ? 1 : 0;
 }
-
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup start*/
+#ifdef POGO_SUPPORT
+void pogo_path_enable(struct smb_charger *chg, bool path_enable)
+{
+	if(path_enable)
+	{
+		gpio_direction_output(chg->otg_enable_gpio,0);
+		gpio_direction_output(chg->pogo_enable_gpio,0);
+	}
+	else
+	{
+		gpio_direction_output(chg->pogo_enable_gpio,1);
+		gpio_direction_output(chg->otg_enable_gpio,1);
+	}
+}
+#endif
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup end*/
 /*****************
  * OTG REGULATOR *
  *****************/
@@ -1307,9 +1459,13 @@ int smblib_vbus_regulator_enable(struct regulator_dev *rdev)
 {
 	struct smb_charger *chg = rdev_get_drvdata(rdev);
 	int rc;
-
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup start*/
+#ifdef POGO_SUPPORT
+	smblib_dbg(chg, PR_OTG, "disabling pogo path, and enabling OTG\n");
+#else
 	smblib_dbg(chg, PR_OTG, "enabling OTG\n");
-
+#endif
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup end*/
 	rc = smblib_masked_write(chg, DCDC_CMD_OTG_REG, OTG_EN_BIT, OTG_EN_BIT);
 	if (rc < 0) {
 		smblib_err(chg, "Couldn't enable OTG rc=%d\n", rc);
@@ -1323,15 +1479,26 @@ int smblib_vbus_regulator_disable(struct regulator_dev *rdev)
 {
 	struct smb_charger *chg = rdev_get_drvdata(rdev);
 	int rc;
-
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup start*/
+#ifdef POGO_SUPPORT
+	smblib_dbg(chg, PR_OTG, "disabling OTG, and enabling pogo path\n");
+#else
 	smblib_dbg(chg, PR_OTG, "disabling OTG\n");
+#endif
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup end*/
 
 	rc = smblib_masked_write(chg, DCDC_CMD_OTG_REG, OTG_EN_BIT, 0);
 	if (rc < 0) {
 		smblib_err(chg, "Couldn't disable OTG regulator rc=%d\n", rc);
 		return rc;
 	}
-
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup*/
+#ifdef POGO_SUPPORT
+//LXF_P400_B01-1812 zhubolin 20181027 Y-cable support bringup
+	if(0 == /*ycable_need_support*/ 0){
+		pogo_path_enable(chg, true);
+	}
+#endif
 	return 0;
 }
 
@@ -1712,6 +1879,12 @@ int smblib_set_prop_batt_status(struct smb_charger *chg,
 	return 0;
 }
 
+#ifdef THERMAL_CONFIG_FB //lct add 20171116
+extern union power_supply_propval lct_therm_lvl_reserved;
+extern bool lct_backlight_off;
+extern int LctIsInCall;
+extern int LctThermal;
+#endif
 int smblib_set_prop_system_temp_level(struct smb_charger *chg,
 				const union power_supply_propval *val)
 {
@@ -1723,6 +1896,18 @@ int smblib_set_prop_system_temp_level(struct smb_charger *chg,
 
 	if (val->intval > chg->thermal_levels)
 		return -EINVAL;
+
+	#ifdef THERMAL_CONFIG_FB
+	pr_err("smblib_set_prop_system_temp_level val=%d\n", val->intval);
+
+	if (LctThermal == 0) { //from therml-engine store lvl_sel
+		lct_therm_lvl_reserved.intval = val->intval;
+	}
+	if ((lct_backlight_off) && (LctIsInCall == 0) && (val->intval > 0)) {
+	    return 0;
+	}
+	pr_err("LctThermal=%d, lct_backlight_off= %d, IsInCall=%d\n", LctThermal, lct_backlight_off, LctIsInCall);
+	#endif
 
 	chg->system_temp_level = val->intval;
 
@@ -1761,9 +1946,13 @@ int smblib_run_aicl(struct smb_charger *chg, int type)
 	/* USB is suspended so skip re-running AICL */
 	if (stat & USBIN_SUSPEND_STS_BIT)
 		return rc;
-
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup start*/
+#ifdef POGO_SUPPORT
+	smblib_dbg(chg, PR_MISC, "%s AICL\n", (type == RERUN_AICL) ? "re-running" : "re-starting");
+#else
 	smblib_dbg(chg, PR_MISC, "re-running AICL\n");
-
+#endif
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup end*/
 	stat = (type == RERUN_AICL) ? RERUN_AICL_BIT : RESTART_AICL_BIT;
 	rc = smblib_masked_write(chg, AICL_CMD_REG, stat, stat);
 	if (rc < 0)
@@ -2777,6 +2966,10 @@ irqreturn_t default_irq_handler(int irq, void *data)
 	struct smb_charger *chg = irq_data->parent_data;
 
 	smblib_dbg(chg, PR_INTERRUPT, "IRQ: %s\n", irq_data->name);
+#ifdef POGO_DEBUG
+	if(strcmp(irq_data->name, "aicl-done") == 0)
+		aicl_status_dump(chg);
+#endif
 	return IRQ_HANDLED;
 }
 
@@ -3057,6 +3250,79 @@ void smblib_usb_plugin_hard_reset_locked(struct smb_charger *chg)
 					vbus_rising ? "attached" : "detached");
 }
 
+#define ARB_VBUS_UV_THRESHOLD 4300000
+#define ARB_IBUS_UA_THRESHOLD 50000
+static void smblib_arb_monitor_work(struct work_struct *work)
+{
+	struct smb_charger *chg = container_of(work, struct smb_charger,
+					arb_monitor_work.work);
+	int rc;
+	int ibus_current,vbus_voltage;
+	union power_supply_propval pval;
+
+	printk("arb_monitor_work start\n");
+
+	rc = power_supply_get_property(chg->usb_psy,
+			POWER_SUPPLY_PROP_INPUT_CURRENT_NOW,
+			&pval);
+	if(rc < 0){
+		smblib_err(chg,"Couldn't get ibus current rc=%d\n",rc);
+		goto out;
+	}else{
+		ibus_current = pval.intval;
+		printk("arb_monitor_work | ibus_current = %d uA\n",ibus_current);
+	}
+
+	rc = power_supply_get_property(chg->usb_psy,
+			POWER_SUPPLY_PROP_VOLTAGE_NOW,
+			&pval);
+	if(rc < 0){
+		smblib_err(chg,"Couldn't get vbus voltage rc=%d\n",rc);
+		goto out;
+	}else{
+		vbus_voltage = pval.intval;
+		printk("arb_monitor_work | vbus_voltage = %d uA\n",vbus_voltage);
+	}
+	
+	if(vbus_voltage < ARB_VBUS_UV_THRESHOLD && ibus_current < ARB_IBUS_UA_THRESHOLD)
+	{
+		//It is ARB,Do suspend usb 100mS
+		rc = vote(chg->usb_icl_votable, USER_VOTER, true, 0);
+		if(rc < 0){
+			printk("arb_monitor_work | Couldn't vote to suspend USB\n");
+			goto out;
+		}
+		rc = vote(chg->dc_suspend_votable, USER_VOTER, true, 0);
+		if(rc < 0){
+			printk("arb_monitor_work | Couldn't vote to suspend DC\n");
+			goto out;
+		}
+
+		printk("arb_monitor_work | vote to suspend DC and USB\n");
+		mdelay(100);
+
+		//do resume usb
+		rc = vote(chg->usb_icl_votable, USER_VOTER, false, 0);
+		if(rc < 0){
+			printk("arb_monitor_work | Couldn't vote to resume USB\n");
+			goto out;
+		}
+		rc = vote(chg->dc_suspend_votable, USER_VOTER, false, 0);
+		if(rc < 0){
+			printk("arb_monitor_work | Couldn't vote to resume DC\n");
+			goto out;
+		}
+
+		printk("arb_monitor_work | Vote to resume DC and USB\n");
+	}
+
+	schedule_delayed_work(&chg->arb_monitor_work,
+					msecs_to_jiffies(10000));
+	return;
+out:
+	printk("arb_monitor_work | meet some error,stop monitor arb\n");
+}
+
 #define PL_DELAY_MS	30000
 void smblib_usb_plugin_locked(struct smb_charger *chg)
 {
@@ -3089,6 +3355,10 @@ void smblib_usb_plugin_locked(struct smb_charger *chg)
 		vote(chg->awake_votable, PL_DELAY_VOTER, true, 0);
 		schedule_delayed_work(&chg->pl_enable_work,
 					msecs_to_jiffies(PL_DELAY_MS));
+
+		schedule_delayed_work(&chg->arb_monitor_work,
+						msecs_to_jiffies(10000));
+		printk("zbl start monitor arb issue\n");
 	} else {
 		if (chg->wa_flags & BOOST_BACK_WA) {
 			data = chg->irq_info[SWITCHER_POWER_OK_IRQ].irq_data;
@@ -3140,12 +3410,15 @@ void smblib_usb_plugin_locked(struct smb_charger *chg)
 			smblib_err(chg, "Couldn't disable DPDM rc=%d\n", rc);
 
 		smblib_update_usb_type(chg);
+		cancel_delayed_work_sync(&chg->arb_monitor_work);
+		printk("zbl stop monitor arb issue\n");
 	}
 
 	if (chg->connector_type == POWER_SUPPLY_CONNECTOR_MICRO_USB)
 		smblib_micro_usb_plugin(chg, vbus_rising);
 
 	power_supply_changed(chg->usb_psy);
+	g_charger_present = vbus_rising;
 	smblib_dbg(chg, PR_INTERRUPT, "IRQ: usbin-plugin %s\n",
 					vbus_rising ? "attached" : "detached");
 }
@@ -3343,6 +3616,21 @@ static void update_sw_icl_max(struct smb_charger *chg, int pst)
 		vote(chg->usb_icl_votable, SW_ICL_MAX_VOTER, true,
 					SDP_100_MA);
 		break;
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup start*/
+#ifdef POGO_SUPPORT
+	case POWER_SUPPLY_TYPE_POGO:
+		vote(chg->usb_icl_votable, SW_ICL_MAX_VOTER, true,
+					POGO_CURRENT_UA);
+		break;
+//LXF_P400_B01-1812 zhubolin 20181027 Y-cable support bringup
+#ifndef CONFIG_KERNEL_CUSTOM_P407
+	case POWER_SUPPLY_TYPE_THUB:
+		vote(chg->usb_icl_votable, SW_ICL_MAX_VOTER, true,
+					THUB_CURRENT_UA);
+		break;
+#endif
+#endif
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup end*/
 	default:
 		smblib_err(chg, "Unknown APSD %d; forcing 500mA\n", pst);
 		vote(chg->usb_icl_votable, SW_ICL_MAX_VOTER, true,
@@ -3402,7 +3690,8 @@ irqreturn_t usb_source_change_irq_handler(int irq, void *data)
 		return IRQ_HANDLED;
 	}
 	smblib_dbg(chg, PR_REGISTER, "APSD_STATUS = 0x%02x\n", stat);
-
+//LXF_P400_A01-1708/LXF_P400_A01-1069/LXF_P400_B01-732/LXF_P400_C01-662 zhubolin 2018-11-30 Charging regnize slow start
+#if 0
 	if ((chg->connector_type == POWER_SUPPLY_CONNECTOR_MICRO_USB)
 		&& (stat & APSD_DTC_STATUS_DONE_BIT)
 		&& !chg->uusb_apsd_rerun_done) {
@@ -3414,7 +3703,8 @@ irqreturn_t usb_source_change_irq_handler(int irq, void *data)
 		smblib_rerun_apsd_if_required(chg);
 		return IRQ_HANDLED;
 	}
-
+#endif
+//LXF_P400_A01-1708/LXF_P400_A01-1069/LXF_P400_B01-732/LXF_P400_C01-662 zhubolin 2018-11-30 Charging regnize slow end
 	smblib_handle_apsd_done(chg,
 		(bool)(stat & APSD_DTC_STATUS_DONE_BIT));
 
@@ -3961,15 +4251,33 @@ static void smblib_uusb_otg_work(struct work_struct *work)
 	struct smb_charger *chg = container_of(work, struct smb_charger,
 						uusb_otg_work.work);
 	int rc;
-	u8 stat;
-	bool otg;
-
+	u8 stat = 0;
+	bool otg = 0;
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup start*/
+#ifdef POGO_SUPPORT
+	if(chg->power_off_mode == 1)
+		goto out;
+#endif
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup end*/
 	rc = smblib_read(chg, TYPEC_U_USB_STATUS_REG, &stat);
 	if (rc < 0) {
 		smblib_err(chg, "Couldn't read TYPE_C_STATUS_3 rc=%d\n", rc);
 		goto out;
 	}
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup start*/
+#ifdef POGO_SUPPORT
+	otg = !!((stat & U_USB_GROUND_NOVBUS_BIT) || (stat & U_USB_GROUND_BIT));
+	
+//LXF_P400_B01-1812 zhubolin 20181027 Y-cable support bringup
+	if(0 == /*ycable_need_support*/ 0){
+		if (otg)
+			pogo_path_enable(chg, false);
+	}
+#else
 	otg = !!(stat & U_USB_GROUND_NOVBUS_BIT);
+#endif
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup end*/
+
 	if (chg->otg_present != otg)
 		smblib_notify_usb_host(chg, otg);
 	else
@@ -4310,8 +4618,13 @@ static void jeita_update_work(struct work_struct *work)
 	}
 
 	/* if BMS hasn't read out the batt_id yet, defer the work */
-	if (val.intval <= 0)
+	if (val.intval <= 0) {
+#ifdef CONFIG_KERNEL_CUSTOM_P407
+		smblib_err(chg, "lj2 Failed val.intval <= 0\n");
+#else
 		return;
+#endif
+	}
 
 	pnode = of_batterydata_get_best_profile(batt_node,
 					val.intval / 1000, NULL);
@@ -4457,6 +4770,7 @@ int smblib_init(struct smb_charger *chg)
 	INIT_DELAYED_WORK(&chg->uusb_otg_work, smblib_uusb_otg_work);
 	INIT_DELAYED_WORK(&chg->bb_removal_work, smblib_bb_removal_work);
 	INIT_DELAYED_WORK(&chg->usbov_dbc_work, smblib_usbov_dbc_work);
+	INIT_DELAYED_WORK(&chg->arb_monitor_work, smblib_arb_monitor_work);
 
 	if (chg->wa_flags & CHG_TERMINATION_WA) {
 		INIT_WORK(&chg->chg_termination_work,
@@ -4516,6 +4830,9 @@ int smblib_init(struct smb_charger *chg)
 		}
 
 		chg->bms_psy = power_supply_get_by_name("bms");
+#ifdef CONFIG_KERNEL_CUSTOM_P407
+		chg->bq27541_psy= power_supply_get_by_name("bq27541");
+#endif
 		chg->pl.psy = power_supply_get_by_name("parallel");
 		if (chg->pl.psy) {
 			rc = smblib_stat_sw_override_cfg(chg, false);

@@ -139,6 +139,9 @@ enum {
 #define DCDC_OTG_CFG_REG			(DCDC_BASE + 0x53)
 #define OTG_EN_SRC_CFG_BIT			BIT(1)
 
+//ACHILLES5-2655 20190711 zhubolin improve OTG output voltage to 5.25V
+#define OTG_OUTPUT_VOLTAGE			(DCDC_BASE + 0x86)
+
 /********************************
  *  BATIF Peripheral Registers  *
  ********************************/

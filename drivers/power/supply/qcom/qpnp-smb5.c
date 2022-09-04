@@ -29,7 +29,33 @@
 #include "smb5-reg.h"
 #include "smb5-lib.h"
 #include "schgm-flash.h"
+/*LXF_P400_B01-303  litao1 2018-11-13 start*/
+#include <linux/gpio.h>
+#include <linux/of_gpio.h>
+/*LXF_P400_B01-303  litao1 2018-11-13 end*/
 
+/*LXF_P400_C01-196 zhubolin 2018-11-8*/
+#ifdef pr_debug
+#undef pr_debug
+#define pr_debug pr_err
+#endif
+
+#ifdef THERMAL_CONFIG_FB //lct add 20171116
+#include <linux/notifier.h>
+#include <linux/fb.h>
+
+union power_supply_propval lct_therm_lvl_reserved;
+union power_supply_propval lct_therm_level;
+bool lct_backlight_off;
+int LctIsInCall = 0;
+int LctThermal =0;
+#endif
+
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup start*/
+#ifdef POGO_SUPPORT
+extern int off_mode;
+#endif
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup end*/
 static struct smb_params smb5_pmi632_params = {
 	.fcc			= {
 		.name   = "fast charge current",
@@ -220,8 +246,13 @@ struct smb5 {
 	struct dentry		*dfs_root;
 	struct smb_dt_props	dt;
 };
-
-static int __debug_mask;
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup start*/
+#ifdef POGO_SUPPORT
+	static int __debug_mask = 0xFF;
+#else
+	static int __debug_mask;
+#endif
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup end*/
 module_param_named(
 	debug_mask, __debug_mask, int, 0600
 );
@@ -294,7 +325,8 @@ static int smb5_chg_config_init(struct smb5 *chip)
 		chg->hw_max_icl_ua =
 			(chip->dt.usb_icl_ua > 0) ? chip->dt.usb_icl_ua
 						: PMI632_MAX_ICL_UA;
-		chg->chg_freq.freq_5V			= 600;
+		/*LXF_P400_A01-1536  zhubolin 2019-1-14 modify freq for 5V charging*/
+		chg->chg_freq.freq_5V			= 1050;
 		chg->chg_freq.freq_6V_8V		= 800;
 		chg->chg_freq.freq_9V			= 1050;
 		chg->chg_freq.freq_removal		= 1050;
@@ -408,6 +440,15 @@ static int smb5_parse_dt(struct smb5 *chip)
 	if (rc < 0)
 		chip->dt.usb_icl_ua = -EINVAL;
 
+	//LXF_P400_B01-303 add litao1 2018-11-13 start
+		chg->usbin_ovp_irq = of_get_named_gpio(node, "qcom,usbin-ovp-irq", 0);
+		if (!gpio_is_valid(chg->usbin_ovp_irq))
+			dev_err(chg->dev,	"Couldn't read qcom,usbin-ovp-irq chg->usbin_ovp_irq =%d\n" ,chg->usbin_ovp_irq);
+		else
+			dev_err(chg->dev,	"read qcom,usbin-ovp-irq chg->usbin_ovp_irq =%d\n" ,chg->usbin_ovp_irq);
+	// LXF_P400_B01-303 add litao1 2018-11-13 end
+	
+
 	rc = of_property_read_u32(node,
 				"qcom,otg-cl-ua", &chg->otg_cl_ua);
 	if (rc < 0)
@@ -507,6 +548,30 @@ static int smb5_parse_dt(struct smb5 *chip)
 
 	chg->fcc_stepper_enable = of_property_read_bool(node,
 					"qcom,fcc-stepping-enable");
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup start*/
+#ifdef POGO_SUPPORT
+	/* pogo */
+	chg->usb_state_gpio = of_get_named_gpio(
+				node, "qcom,usb-state-gpio",0);
+	if (chg->usb_state_gpio < 0)
+		pr_err("request qcom,qcom,usb-state-gpio fail\n");
+
+	chg->pogo_state_gpio = of_get_named_gpio(
+				node, "qcom,pogo-state-gpio",0);
+	if (chg->pogo_state_gpio < 0)
+		pr_err("request qcom,pogo-state-gpio fail\n");
+
+	chg->otg_enable_gpio = of_get_named_gpio(
+				node, "qcom,otg-enable-gpio",0);
+	if (chg->otg_enable_gpio < 0)
+		pr_err("request qcom,otg-enable-gpio fail\n");
+
+	chg->pogo_enable_gpio = of_get_named_gpio(
+				node, "qcom,pogo-enable-gpio",0);
+	if (chg->pogo_enable_gpio < 0)
+		pr_err("request qcom,pogo-enable-gpio fail\n");
+#endif
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup end*/
 
 	return 0;
 }
@@ -793,6 +858,23 @@ static int smb5_usb_set_prop(struct power_supply *psy,
 	switch (psp) {
 	case POWER_SUPPLY_PROP_PD_CURRENT_MAX:
 		rc = smblib_set_prop_pd_current_max(chg, val);
+		break;
+/*LXF_P400_A01-596/LXF_P400_B01/LXF_P400_B01-330-456 zhubolin 2018-12-6 For pogo and float charger current*/
+	case POWER_SUPPLY_PROP_REAL_TYPE:
+		#ifdef CONFIG_KERNEL_CUSTOM_P407
+			chg->real_charger_type = val->intval;
+		#else
+			#ifdef POGO_SUPPORT
+				if((val->intval == POWER_SUPPLY_TYPE_USB_FLOAT) && 
+					(1 == gpio_get_value(chg->pogo_state_gpio)) && 
+					(0 == gpio_get_value(chg->usb_state_gpio))){
+						chg->real_charger_type = val->intval;
+						printk("usb phy set float\n");
+				}
+			#else
+				chg->real_charger_type = val->intval;
+			#endif
+		#endif
 		break;
 	case POWER_SUPPLY_PROP_TYPEC_POWER_ROLE:
 		rc = smblib_set_prop_typec_power_role(chg, val);
@@ -1263,6 +1345,8 @@ static enum power_supply_property smb5_batt_props[] = {
 	POWER_SUPPLY_PROP_RECHARGE_SOC,
 	POWER_SUPPLY_PROP_CHARGE_FULL,
 	POWER_SUPPLY_PROP_FCC_STEPPER_ENABLE,
+/*LXF_P400_C01-201 zhubolin 2018-11-9 runin charging control*/
+	POWER_SUPPLY_PROP_CHARGING_ENABLED,
 };
 
 #define ITERM_SCALING_FACTOR_PMI632	1525
@@ -1339,7 +1423,12 @@ static int smb5_batt_get_prop(struct power_supply *psy,
 		rc = smblib_get_prop_batt_charge_type(chg, val);
 		break;
 	case POWER_SUPPLY_PROP_CAPACITY:
+#ifdef CONFIG_KERNEL_CUSTOM_P407
+		rc = smblib_get_prop_from_bq27541(chg,
+				POWER_SUPPLY_PROP_CAPACITY, val);
+#else
 		rc = smblib_get_prop_batt_capacity(chg, val);
+#endif
 		break;
 	case POWER_SUPPLY_PROP_CHARGE_CONTROL_LIMIT:
 		rc = smblib_get_prop_system_temp_level(chg, val);
@@ -1424,6 +1513,12 @@ static int smb5_batt_get_prop(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_FCC_STEPPER_ENABLE:
 		val->intval = chg->fcc_stepper_enable;
 		break;
+/*LXF_P400_C01-201 zhubolin 2018-11-9 runin charging control start*/
+	case POWER_SUPPLY_PROP_CHARGING_ENABLED:
+		val->intval = !!get_client_vote(chg->usb_icl_votable,
+					      USER_VOTER);
+		break;
+/*LXF_P400_C01-201 zhubolin 2018-11-9 runin charging control end*/
 	default:
 		pr_err("batt power supply prop %d not supported\n", psp);
 		return -EINVAL;
@@ -1444,6 +1539,8 @@ static int smb5_batt_set_prop(struct power_supply *psy,
 	int rc = 0;
 	struct smb_charger *chg = power_supply_get_drvdata(psy);
 	bool enable;
+/*LXF_P400_C01-201 zhubolin 2018-11-9 runin charging control*/
+	union power_supply_propval pval = {0, };
 
 	switch (prop) {
 	case POWER_SUPPLY_PROP_STATUS:
@@ -1521,6 +1618,25 @@ static int smb5_batt_set_prop(struct power_supply *psy,
 					false, 0);
 		}
 		break;
+/*LXF_P400_C01-201 zhubolin 2018-11-9 runin charging control start*/
+	case POWER_SUPPLY_PROP_CHARGING_ENABLED:
+		smblib_get_prop_batt_capacity(chg, &pval);
+		printk("runin:battery capacity is %d,want to %s.\n",pval.intval,
+				!(bool)val->intval ? "suspend" : "resume");
+		/* vote 0mA when suspended */
+		rc = vote(chg->usb_icl_votable, USER_VOTER, !(bool)val->intval, 0);
+		if (rc < 0) {
+			dev_err(chg->dev, "runin:Couldn't vote to %s USB rc=%d\n",
+				!(bool)val->intval ? "suspend" : "resume", rc);
+		}
+		rc = vote(chg->dc_suspend_votable, USER_VOTER, !(bool)val->intval, 0);
+		if (rc < 0) {
+			dev_err(chg->dev, "runin:Couldn't vote to %s DC rc=%d\n",
+				!(bool)val->intval ? "suspend" : "resume", rc);
+		}
+		power_supply_changed(chg->batt_psy);
+		break;
+/*LXF_P400_C01-201 zhubolin 2018-11-9 runin charging control end*/
 	default:
 		rc = -EINVAL;
 	}
@@ -1544,6 +1660,8 @@ static int smb5_batt_prop_is_writeable(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_SW_JEITA_ENABLED:
 	case POWER_SUPPLY_PROP_DIE_HEALTH:
 	case POWER_SUPPLY_PROP_BATTERY_CHARGING_ENABLED:
+/*LXF_P400_C01-201 zhubolin 2018-11-9 runin charging control*/
+	case POWER_SUPPLY_PROP_CHARGING_ENABLED:
 		return 1;
 	default:
 		break;
@@ -1957,7 +2075,27 @@ static int smb5_init_hw(struct smb5 *chip)
 		dev_err(chg->dev, "Couldn't configure HVDCP rc=%d\n", rc);
 		return rc;
 	}
-
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup start*/
+#ifdef POGO_SUPPORT
+	/*
+	 * Disable HVDCP autonomous mode operation by default, providing a DT
+	 * knob to turn it on if required. Additionally, if specified in DT,
+	 * disable HVDCP and HVDCP authentication algorithm.
+	 */
+	val = (chip->dt.hvdcp_disable) ? 0 :
+		(HVDCP_AUTH_ALG_EN_CFG_BIT | HVDCP_EN_BIT);
+	pr_info("hvdcp %s\n", chip->dt.hvdcp_disable ? "disabled":"enabled");
+	
+	rc = smblib_masked_write(chg, USBIN_OPTIONS_1_CFG_REG,
+			(HVDCP_AUTH_ALG_EN_CFG_BIT | HVDCP_EN_BIT |
+			 HVDCP_AUTONOMOUS_MODE_EN_CFG_BIT),
+			val);
+	if (rc < 0) {
+		dev_err(chg->dev, "Couldn't configure HVDCP rc=%d\n", rc);
+		return rc;
+	}
+#endif
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup end*/
 	/*
 	 * PMI632 can have the connector type defined by a dedicated register
 	 * TYPEC_MICRO_USB_MODE_REG or by a common TYPEC_U_USB_CFG_REG.
@@ -2073,6 +2211,14 @@ static int smb5_init_hw(struct smb5 *chip)
 			dev_err(chg->dev, "Couldn't config AICL rc=%d\n", rc);
 			return rc;
 		}
+	}else{
+		//LXF_P400_B01-2359 20190521 zhubolin qcom patch for plug out usb cable still show charging
+		rc = smblib_masked_write(chg, USBIN_AICL_OPTIONS_CFG_REG,
+				0xff, 0x54);
+		if (rc < 0) {
+			dev_err(chg->dev, "Couldn't config AICL rc=%d\n", rc);
+			return rc;
+		}
 	}
 
 	/* enable the charging path */
@@ -2082,6 +2228,16 @@ static int smb5_init_hw(struct smb5 *chip)
 		return rc;
 	}
 
+	//ACHILLES5-2655 20190711 zhubolin improve OTG output voltage to 5.25V
+	msleep(20);
+	/* configure OTG output voltage */
+	rc = smblib_masked_write(chg, OTG_OUTPUT_VOLTAGE, 0xff, 0x2b);
+	if (rc < 0) {
+		dev_err(chg->dev,
+			"Couldn't configure OTG output voltage rc=%d\n", rc);
+		return rc;
+	}
+	msleep(20);
 	/* configure VBUS for software control */
 	rc = smblib_masked_write(chg, DCDC_OTG_CFG_REG, OTG_EN_SRC_CFG_BIT, 0);
 	if (rc < 0) {
@@ -2311,7 +2467,10 @@ static int smb5_determine_initial_status(struct smb5 *chip)
 	struct smb_charger *chg = &chip->chg;
 	union power_supply_propval val;
 	int rc;
-
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup*/
+#ifdef POGO_SUPPORT
+	int usb_path_state, pogo_path_state;
+#endif
 	rc = smblib_get_prop_usb_present(chg, &val);
 	if (rc < 0) {
 		pr_err("Couldn't get usb present rc=%d\n", rc);
@@ -2331,6 +2490,13 @@ static int smb5_determine_initial_status(struct smb5 *chip)
 	batt_temp_changed_irq_handler(0, &irq_data);
 	wdog_bark_irq_handler(0, &irq_data);
 	typec_or_rid_detection_change_irq_handler(0, &irq_data);
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup start*/
+#ifdef POGO_SUPPORT
+	usb_path_state = gpio_get_value(chg->usb_state_gpio) ? 0:1;
+	pogo_path_state = gpio_get_value(chg->pogo_state_gpio) ? 0:1;
+	pr_info("usb, pogo path status=%d, %d\n", usb_path_state, pogo_path_state);
+#endif
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup end*/
 
 	return 0;
 }
@@ -2643,12 +2809,34 @@ static int smb5_request_interrupt(struct smb5 *chip,
 	return rc;
 }
 
+
+//LXF_P400_B01-303--litao1 add 20181113 start
+static irqreturn_t ovp_irq_handler(int irq, void *dev_id)
+{	struct smb_charger *chg = dev_id;
+	int gpio_level;
+	printk("kkkk ovp_irq_handler detect \n");
+	gpio_level = gpio_get_value(chg->usbin_ovp_irq);
+	if(gpio_level==0){
+			/*LXF_P400_B01-303-zbl-20181121 rm for otg function*/
+			//gpio_direction_output(8,0);
+			printk("kkkk short circuit ovp_irq_handler get gpio value==0, pull down \n");
+				}
+	else if(gpio_level==1){
+			/*LXF_P400_B01-303-zbl-20181121 rm for otg function*/
+			//gpio_direction_output(8,1);
+			printk("kkkk not short circuit  ovp_irq_handler get gpio value==1, pull up \n");
+			}
+	return IRQ_HANDLED;
+}
+//LXF_P400_B01-303--litao1 add20181113 end
+
 static int smb5_request_interrupts(struct smb5 *chip)
 {
 	struct smb_charger *chg = &chip->chg;
 	struct device_node *node = chg->dev->of_node;
 	struct device_node *child;
 	int rc = 0;
+	int ovp_irq;	//litao1 add 20181113 LXF_P400_B01-303
 	const char *name;
 	struct property *prop;
 
@@ -2660,6 +2848,27 @@ static int smb5_request_interrupts(struct smb5 *chip)
 				return rc;
 		}
 	}
+
+// LXF_P400_B01-303 add litao1 20181113 start
+	/* use irq */
+	if (gpio_is_valid(chg->usbin_ovp_irq)) {
+		ovp_irq = gpio_to_irq(chg->usbin_ovp_irq);
+			dev_err(chg->dev,	"read qcom,usbin-ovp-irq chg->usbin_ovp_irq =%d\n" ,chg->usbin_ovp_irq);
+			dev_err(chg->dev, "INT num %d,\n", ovp_irq);
+			rc = request_threaded_irq(ovp_irq, NULL,
+								ovp_irq_handler,
+								IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
+								"ovp_detect",
+								chg);
+			if (rc< 0) {
+				dev_err(chg->dev,	"Failed to request irq ovp_irq = %d\n", ovp_irq);
+				return rc;
+				}
+			}
+//LXF_P400_B01-303 add litao1  20181113  end
+	
+
+	
 	if (chg->irq_info[USBIN_ICL_CHANGE_IRQ].irq)
 		chg->usb_icl_change_irq_enabled = true;
 
@@ -2801,12 +3010,96 @@ static int smb5_show_charger_status(struct smb5 *chip)
 	return rc;
 }
 
+#ifdef THERMAL_CONFIG_FB
+static ssize_t lct_thermal_call_status_show(struct device *dev,
+					struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%d\n", LctIsInCall);
+}
+static ssize_t lct_thermal_call_status_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	int retval;
+	unsigned int input;
+
+	if (sscanf(buf, "%u", &input) != 1)
+		retval = -EINVAL;
+	else
+	        LctIsInCall = input;
+
+	pr_err("IsInCall = %d\n", LctIsInCall);
+
+	return retval;
+}
+static struct device_attribute attrs2[] = {
+	__ATTR(thermalcall, S_IRUGO | S_IWUSR,
+			lct_thermal_call_status_show, lct_thermal_call_status_store),
+};
+	
+static void thermal_fb_notifier_resume_work(struct work_struct *work)
+{
+	struct smb_charger *chg = container_of(work, struct smb_charger, fb_notify_work);
+	
+	LctThermal = 1;
+	if((lct_backlight_off) && (LctIsInCall == 0)){
+		pr_err("zbl unlimit thermal when screen off\n");
+		smblib_set_prop_system_temp_level(chg,&lct_therm_level);
+	}else{
+		pr_err("zbl recover thermal limit when screen on\n");
+		smblib_set_prop_system_temp_level(chg,&lct_therm_lvl_reserved);
+	}
+	LctThermal = 0;
+}
+
+/* frame buffer notifier block control the suspend/resume procedure */
+static int thermal_notifier_callback(struct notifier_block *noti, unsigned long event, void *data)
+{
+	struct fb_event *ev_data = data;
+	struct smb_charger *chg = container_of(noti, struct smb_charger, notifier);
+	int *blank;
+	if (ev_data && ev_data->data && chg) {
+		blank = ev_data->data;
+		if (event == FB_EARLY_EVENT_BLANK && *blank == FB_BLANK_UNBLANK) {
+			lct_backlight_off = false;
+			schedule_work(&chg->fb_notify_work);
+		}
+		else if (event == FB_EVENT_BLANK && *blank == FB_BLANK_POWERDOWN) {
+			lct_backlight_off = true;
+			schedule_work(&chg->fb_notify_work);
+		}
+	}
+
+	return 0;
+}
+
+static int lct_register_powermanger(struct smb_charger *chg)
+{
+#if defined(CONFIG_FB)
+	chg->notifier.notifier_call = thermal_notifier_callback;
+	fb_register_client(&chg->notifier);
+#endif	
+
+	return 0;
+}
+
+static int lct_unregister_powermanger(struct smb_charger *chg)
+{
+#if defined(CONFIG_FB)
+	fb_unregister_client(&chg->notifier);		
+#endif
+
+	return 0;
+}
+#endif
+
 static int smb5_probe(struct platform_device *pdev)
 {
 	struct smb5 *chip;
 	struct smb_charger *chg;
 	int rc = 0;
-
+	#ifdef THERMAL_CONFIG_FB
+	unsigned char attr_count2;
+	#endif
 	chip = devm_kzalloc(&pdev->dev, sizeof(*chip), GFP_KERNEL);
 	if (!chip)
 		return -ENOMEM;
@@ -2820,6 +3113,13 @@ static int smb5_probe(struct platform_device *pdev)
 	chg->irq_info = smb5_irqs;
 	chg->die_health = -EINVAL;
 	chg->otg_present = false;
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup start*/
+#ifdef POGO_SUPPORT
+	#ifndef CONFIG_KERNEL_CUSTOM_P407
+	chg->power_off_mode = off_mode;
+	#endif
+#endif
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup end*/
 	mutex_init(&chg->vadc_lock);
 
 	chg->regmap = dev_get_regmap(chg->dev->parent, NULL);
@@ -2917,7 +3217,17 @@ static int smb5_probe(struct platform_device *pdev)
 		pr_err("Couldn't initialize batt psy rc=%d\n", rc);
 		goto cleanup;
 	}
-
+	#ifdef THERMAL_CONFIG_FB
+	pr_info("enter sysfs create file thermal\n");
+	for (attr_count2 = 0; attr_count2 < ARRAY_SIZE(attrs2); attr_count2++) {
+		    rc = sysfs_create_file(&chg->dev->kobj,
+						&attrs2[attr_count2].attr);
+			if (rc < 0) {
+		        sysfs_remove_file(&chg->dev->kobj,
+						&attrs2[attr_count2].attr);
+			} 
+		}
+	#endif
 	rc = smb5_determine_initial_status(chip);
 	if (rc < 0) {
 		pr_err("Couldn't determine initial status rc=%d\n",
@@ -2946,7 +3256,14 @@ static int smb5_probe(struct platform_device *pdev)
 	}
 
 	device_init_wakeup(chg->dev, true);
-
+	#ifdef THERMAL_CONFIG_FB
+ 	lct_therm_lvl_reserved.intval= 0;
+ 	lct_therm_level.intval= 0;
+	lct_backlight_off = false;
+	INIT_WORK(&chg->fb_notify_work, thermal_fb_notifier_resume_work);
+	/* register suspend and resume fucntion*/
+	lct_register_powermanger(chg);
+	#endif
 	pr_info("QPNP SMB5 probed successfully\n");
 
 	return rc;
@@ -2964,7 +3281,15 @@ static int smb5_remove(struct platform_device *pdev)
 {
 	struct smb5 *chip = platform_get_drvdata(pdev);
 	struct smb_charger *chg = &chip->chg;
+	#ifdef THERMAL_CONFIG_FB
+	unsigned char attr_count2;
 
+	for (attr_count2 = 0; attr_count2 < ARRAY_SIZE(attrs2); attr_count2++) {
+		  sysfs_remove_file(&chg->dev->kobj,
+						&attrs2[attr_count2].attr);
+	}
+	lct_unregister_powermanger(chg);
+	#endif
 	/* force enable APSD */
 	smblib_masked_write(chg, USBIN_OPTIONS_1_CFG_REG,
 				BC1P2_SRC_DETECT_BIT, BC1P2_SRC_DETECT_BIT);

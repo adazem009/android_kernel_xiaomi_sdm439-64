@@ -58,17 +58,18 @@ static void __iomem *msm_ps_hold;
 static phys_addr_t tcsr_boot_misc_detect;
 static void scm_disable_sdi(void);
 static bool force_warm_reboot;
-
-#ifdef CONFIG_QCOM_DLOAD_MODE
+//#lc mike_zhu  for ssr 20190214 start 
+//#ifdef CONFIG_QCOM_DLOAD_MODE
+#ifdef  CONFIG_BUILD_FACTORY
 /* Runtime could be only changed value once.
  * There is no API from TZ to re-enable the registers.
  * So the SDI cannot be re-enabled when it already by-passed.
  */
 static int download_mode = 1;
 #else
-static const int download_mode;
+static int download_mode = 0;//for ssr_reboot 
 #endif
-
+//#lc mike_zhu  for ssr 20190214 end 
 #ifdef CONFIG_QCOM_DLOAD_MODE
 #define EDL_MODE_PROP "qcom,msm-imem-emergency_download_mode"
 #define DL_MODE_PROP "qcom,msm-imem-download_mode"

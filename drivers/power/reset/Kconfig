@@ -29,6 +29,12 @@ config POWER_RESET_AT91_RESET
 	help
 	  This driver supports restart for Atmel AT91SAM9 and SAMA5
 	  SoCs
+#lc mike_zhu  for ssr 20190214 start 
+config BUILD_FACTORY
+     bool "just for FACTORY build"
+     help
+	This is just for FACTORY build
+###lc mike_zhu  for ssr 20190214 end 
 
 config POWER_RESET_AT91_SAMA5D2_SHDWC
 	tristate "Atmel AT91 SAMA5D2-Compatible shutdown controller driver"
