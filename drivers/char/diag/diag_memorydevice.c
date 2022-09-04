@@ -322,6 +322,10 @@ int diag_md_copy_to_user(char __user *buf, int *pret, size_t buf_size,
 				if (err)
 					goto drop_data;
 				ret += entry->len;
+			pr_err("drain_again[%d], msg len[%d] from peripheral[%d]/[%d] to process[%d/%s]\n", 
+				drain_again, entry->len, peripheral, i, info->pid, session_info->task->comm); 
+			print_hex_dump(KERN_INFO, "@ write to application: ", DUMP_PREFIX_NONE, 
+				16, 1, entry->buf, entry->len>0x100?0x100:entry->len, 0); 
 			}
 			/*
 			 * The data is now copied to the user space client,

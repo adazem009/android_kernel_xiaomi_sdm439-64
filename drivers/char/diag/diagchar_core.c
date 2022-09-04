@@ -750,6 +750,10 @@ int diag_cmd_add_reg(struct diag_cmd_reg_entry_t *new_entry, uint8_t proc,
 		return -ENOMEM;
 	kmemleak_not_leak(new_item);
 
+	pr_err("@ %s, registering cmd=%02x subsys_id=%02x lo=%02x hi=%02x, peripheral[%d] pid=%d(%s)\n", 
+		__func__,new_entry->cmd_code,new_entry->subsys_id,new_entry->cmd_code_lo, 
+			new_entry->cmd_code_hi, proc, pid, current->comm); 
+
 	new_item->pid = pid;
 	new_item->proc = proc;
 	memcpy(&new_item->entry, new_entry,

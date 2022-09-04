@@ -210,6 +210,9 @@ int diag_mux_write(int proc, unsigned char *buf, int len, int ctx)
 		return -EINVAL;
 	}
 
+	pr_err("@ %s, msg len[%d] from peripheral[%d]/[%d]\n", __func__, len, peripheral, proc);
+                print_hex_dump(KERN_INFO, "@ response packet: ", DUMP_PREFIX_NONE,
+                        16, 1, buf, len>0x20?0x20:len, 0);
 	if (MD_PERIPHERAL_MASK(peripheral) & diag_mux->mux_mask) {
 		logger = diag_mux->md_ptr;
 	} else {
