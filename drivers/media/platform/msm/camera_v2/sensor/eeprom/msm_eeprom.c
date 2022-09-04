@@ -17,6 +17,8 @@
 #include "msm_sd.h"
 #include "msm_cci.h"
 #include "msm_eeprom.h"
+/*LXF_P400_A01-47 wujun 2018-09-17 start*/
+#include "hi556.h"
 
 #undef CDBG
 #define CDBG(fmt, args...) pr_debug(fmt, ##args)
@@ -25,6 +27,63 @@ DEFINE_MSM_MUTEX(msm_eeprom_mutex);
 #ifdef CONFIG_COMPAT
 static struct v4l2_file_operations msm_eeprom_v4l2_subdev_fops;
 #endif
+struct vendor_eeprom s_vendor_eeprom[CAMERA_VENDOR_EEPROM_COUNT_MAX];
+
+/*LXF_P400_A01-47 wujun add for eeprom 2018-09-17 start*/
+static int custom_hynix_define_otp_read(struct msm_eeprom_ctrl_t *e_ctrl,
+		struct msm_eeprom_memory_map_t *emap, uint8_t *memptr) {
+	int m = 0;
+	int k = 0;
+	uint32_t addr = 0;
+	int rc =0;
+	pr_err("%s: hi556 otp read init \n", __func__);
+	for (m = 0; m < sizeof(init_reg_array0) / (sizeof(init_reg_array0[0])); m++){
+		rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client),
+				init_reg_array0[m].reg_addr, init_reg_array0[m].reg_data, MSM_CAMERA_I2C_WORD_DATA);
+		if (rc < 0) {
+			pr_err("%s: hi556 init  failed\n", __func__);
+			return rc;
+		}
+	}
+	mdelay(100);
+	for (m = 0; m < sizeof(init_otp_array) / sizeof(init_otp_array[0]); m++){
+		rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client),
+				init_otp_array[m].reg_addr, init_otp_array[m].reg_data, MSM_CAMERA_I2C_BYTE_DATA);
+		mdelay(init_otp_array[m].delay);
+		if (rc < 0) {
+			pr_err("%s: hi556 to otp mode  failed\n", __func__);
+			return rc;
+		}
+	}
+	/*
+	rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0x10A, (addr>>8)&0xff, MSM_CAMERA_I2C_BYTE_DATA);
+	rc |= e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0x10B, addr & 0xff, MSM_CAMERA_I2C_BYTE_DATA);
+	rc |= e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0x102, 1, MSM_CAMERA_I2C_BYTE_DATA);
+	*/
+	for (addr = emap->mem.addr, k = 0; k < (emap->mem.valid_size); addr++, k++) {
+		rc |= e_ctrl->i2c_client.addr_type = MSM_CAMERA_I2C_WORD_DATA;
+		rc |= e_ctrl->i2c_client.i2c_func_tbl->i2c_read_seq(&(e_ctrl->i2c_client), 0x108, memptr, 1);
+		//pr_err(" hi556 custom:addr:[0x%04x] value: (0x%x)\n", addr, *memptr);
+		memptr++;  // must
+		if (rc < 0) {
+			pr_err("%s: hi556 read failed\n", __func__);
+			return rc;
+		}
+	}
+	for (m = 0; m < sizeof(otp_to_norm_mode_array)/sizeof(otp_to_norm_mode_array[0]); m++){
+		rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client),
+				otp_to_norm_mode_array[m].reg_addr, otp_to_norm_mode_array[m].reg_data, 1);
+		if (rc < 0) {
+			pr_err("%s: to normal  failed\n", __func__);
+			return rc;
+		}
+	}
+	return rc;
+}
+/*LXF_P400_A01-47 wujun add for eeprom 2018-09-17 end*/
+
+
+
 
 /*
  * msm_get_read_mem_size - Get the total size for allocation
@@ -57,7 +116,9 @@ static int msm_get_read_mem_size
 			if ((eeprom_map->mem_settings[i].i2c_operation ==
 				MSM_CAM_READ) ||
 				(eeprom_map->mem_settings[i].i2c_operation ==
-				MSM_CAM_READ_LOOP)) {
+				MSM_CAM_READ_LOOP) ||
+				(eeprom_map->mem_settings[i].i2c_operation ==  /*add for gc5025 & gc5025h*/
+                                MSM_CAM_READ_GC5025A)) {
 				size += eeprom_map->mem_settings[i].reg_data;
 			}
 		}
@@ -136,6 +197,144 @@ static uint32_t msm_eeprom_match_crc(struct msm_eeprom_memory_block_t *data)
 	}
 	return ret;
 }
+//add gc5025a otp
+static int gc5025a_otp_readmode_initial(struct msm_eeprom_ctrl_t *e_ctrl,struct msm_eeprom_memory_block_t *block,uint8_t *memptr)
+{
+	int rc = 0;
+//	int i;
+	int gc;
+	uint16_t gc_read;
+	CDBG("\r\n tom han gc5025a memptr = 0x%p\n", memptr);
+	if(block->mapdata == NULL)
+		CDBG("\r\n tom han gc5025a %s block->mapdata == NULL\n", __func__);	
+	CDBG("\r\n tom han gc5025a %s enter\n", __func__);
+//	e_ctrl->i2c_client.addr_type = MSM_CAMERA_I2C_WORD_ADDR;
+	e_ctrl->i2c_client.addr_type = 1;
+	if (e_ctrl->i2c_client.cci_client) {
+			e_ctrl->i2c_client.cci_client->sid =
+				0x6e >> 1;
+		CDBG("tom han gc5025a e_ctrl->i2c_client.cci_client->sid = 0x%x\n", e_ctrl->i2c_client.cci_client->sid );	
+		
+	} else if(e_ctrl->i2c_client.client) {
+			e_ctrl->i2c_client.client->addr =
+				0x6e >> 1;
+		CDBG("tom han gc5025a e_ctrl->i2c_client.client->addr = 0x%x\n", e_ctrl->i2c_client.client->addr );
+	}
+	msleep(10);
+/*		rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_write_table(&(e_ctrl->i2c_client), &gc5025a_otp_read_init_setting_start);
+		CDBG("\r\n tom han gc5025a: rc1 = %d\n",rc );
+	if (rc < 0) {
+		CDBG("\r\n tom han gc5025a <3>""%s: otp read mode initial setting failed\n", __func__);
+		return rc;
+	}*/
+		CDBG("\r\n tom han gc5025a %s:%d:num_data=%d\n", __func__, __LINE__,block->num_data);
+	
+		rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0xf7, 0x01,1);
+		if (rc < 0) {
+				pr_err("%s:tom han gc5025a read 0xf7 read failed\n",__func__);
+				goto clean_up;
+			}
+		
+		rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0xf8, 0x11,1);
+		if (rc < 0) {
+				pr_err("%s:tom han gc5025a read 0xf8 read failed\n",__func__);
+				goto clean_up;
+			}
+
+
+		rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0xf9, 0x00,1);
+		if (rc < 0) {
+				pr_err("%s:tom han gc5025a read 0xf9 read failed\n",__func__);
+				goto clean_up;
+			}
+	
+		rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0xfc, 0x2e,1);
+		if (rc < 0) {
+				pr_err("%s:tom han gc5025a read 0xfc read failed\n",__func__);
+				goto clean_up;
+			}
+
+		rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0xfa, 0xb0,1);
+		if (rc < 0) {
+				pr_err("%s:tom han gc5025a read 0xfa read failed\n",__func__);
+				goto clean_up;
+			}
+
+		rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0xd4, 0x80,1);
+		if (rc < 0) {
+				pr_err("%s:tom han gc5025a read 0xd4 read failed\n",__func__);
+				goto clean_up;
+			}
+		e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0xd5, 0x00,1);
+		if (rc < 0) {
+				pr_err("%s:tom han gc5025a read 0xd5 read failed\n",__func__);
+				goto clean_up;
+			}
+		e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0xf3, 0x20,1);
+		if (rc < 0) {
+				pr_err("%s:tom han gc5025a read 0xf30 read failed\n",__func__);
+				goto clean_up;
+			}
+		e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0xf3, 0x88,1);
+		if (rc < 0) {
+				pr_err("%s:tom han gc5025a read 0xf31 read failed\n",__func__);
+				goto clean_up;
+			}			
+		msleep(1);
+					
+		for(gc = 0; gc < 128; gc++) {
+			msleep(1);
+			rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_read(&(e_ctrl->i2c_client), 0xd7, &gc_read,1);
+			if (rc < 0) {
+				pr_err("%s:tom han read 0xd7 read failed\n",__func__);
+				goto clean_up;
+			}
+			*memptr = (uint8_t)gc_read;
+			if(*memptr != 0)
+				pr_err("\r\n tom han read gc5025a otp page0 [%2x]=%2x\n", gc, *memptr);
+			memptr++;	
+		}
+	
+		e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0xd4, 0x84,1);
+		e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0xd5, 0x00,1);
+		e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0xf3, 0x20,1);
+		e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0xf3, 0x88,1);
+					
+		msleep(1);
+					
+		for(gc = 0; gc < 128; gc++) {
+			msleep(1);
+			rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_read(&(e_ctrl->i2c_client), 0xd7, &gc_read,1);
+			if (rc < 0) {
+				pr_err("%s: read failed\n",__func__);
+				goto clean_up;
+			}
+			*memptr = (uint8_t)gc_read;
+			if(*memptr != 0)
+				pr_err("\r\n tom han read gc5025a otp page1 [%2x]=%2x\n", gc, *memptr);
+			memptr++;	
+		}
+/*		for(gc = 0; gc < 0x80; gc++) {
+			msleep(1);
+			rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_read(&(e_ctrl->i2c_client), 0xd7, &gc_read,1);
+			if (rc < 0) {
+				pr_err("%s: read failed\n",__func__);
+				goto clean_up;
+			}
+			*memptr = (uint8_t)gc_read;
+			if(*memptr !=0)
+			pr_err("\r\n tom han read gc5025a otp page1 [%2x]=%2x\n", gc, *memptr);
+			memptr++;	
+		}*/
+	CDBG("\r\n gc5025a %s read success\n", __func__);
+	return 0x5025;
+
+clean_up:
+	kfree(e_ctrl->cal_data.mapdata);
+	e_ctrl->cal_data.num_data = 0;
+	e_ctrl->cal_data.mapdata = NULL;
+	return rc;
+}
 
 /*
  * read_eeprom_memory() - read map data into buffer
@@ -205,6 +404,12 @@ static int read_eeprom_memory(struct msm_eeprom_ctrl_t *e_ctrl,
 		}
 
 		if (emap[j].mem.valid_size) {
+			/*LXF_P400_A01-47 wujun add for eeprom 2018-09-17 start*/
+			if(strcmp(eb_info->eeprom_name,"lenovo_hi556_lcetron_back_i")==0){
+					rc = custom_hynix_define_otp_read(e_ctrl,&emap[j],memptr);
+					pr_err("hynix_define_otp_read lenovo_hi556_lcetron_back_i eeprom\n");
+			}  /*LXF_P400_A01-47 wujun add for eeprom 2018-09-17 end*/
+			else{
 			e_ctrl->i2c_client.addr_type = emap[j].mem.addr_t;
 			rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_read_seq(
 				&(e_ctrl->i2c_client), emap[j].mem.addr,
@@ -214,6 +419,7 @@ static int read_eeprom_memory(struct msm_eeprom_ctrl_t *e_ctrl,
 				return rc;
 			}
 			memptr += emap[j].mem.valid_size;
+			}
 		}
 		if (emap[j].pageen.valid_size) {
 			e_ctrl->i2c_client.addr_type = emap[j].pageen.addr_t;
@@ -226,6 +432,20 @@ static int read_eeprom_memory(struct msm_eeprom_ctrl_t *e_ctrl,
 			}
 		}
 	}
+	pr_err("read %s \n", eb_info->eeprom_name);	
+	if(!strcmp(eb_info->eeprom_name,"lenovo_gc5025a_holitech_back_i")){
+		pr_err("gc5025a read enter\n");	
+//		CDBG("tom han gc5025a = %d\n",memptr);
+		memptr -= 0x100;// page 0 && page 1 have 256 Bytes
+		rc = gc5025a_otp_readmode_initial(e_ctrl, &e_ctrl->cal_data, memptr);
+		if (rc  != 0x5025){
+			rc = 0;
+			pr_err("gc5025a read error, return rc = %d\n",rc);	
+		}
+//		CDBG("tom han gc5025a = %d\n",memptr);
+		return rc;
+	}	
+	
 	return rc;
 }
 /*
@@ -440,6 +660,59 @@ static int eeprom_parse_memory_map(struct msm_eeprom_ctrl_t *e_ctrl,
 			}
 			break;
 
+			case MSM_CAM_READ_GC5025A: { /*add for gc5025 & gc5025a*/
+				e_ctrl->i2c_client.addr_type = 1;
+				if(1 == eeprom_map->mem_settings[i].reg_data) {
+					e_ctrl->i2c_client.i2c_func_tbl->i2c_write(
+ 						&(e_ctrl->i2c_client), 0xd4,
+ 						0x80 | ((eeprom_map->mem_settings[i].reg_addr >> 8) & 0xff),
+						eeprom_map->mem_settings[i].data_type);
+					e_ctrl->i2c_client.i2c_func_tbl->i2c_write(
+ 						&(e_ctrl->i2c_client), 0xd5,
+ 						eeprom_map->mem_settings[i].reg_addr & 0xff,
+						eeprom_map->mem_settings[i].data_type);
+					e_ctrl->i2c_client.i2c_func_tbl->i2c_write(
+ 						&(e_ctrl->i2c_client), 0xf3, 0x20,
+						eeprom_map->mem_settings[i].data_type);
+					msleep(eeprom_map->mem_settings[i].delay);
+					rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_read(
+						&(e_ctrl->i2c_client), 0xd7, &gc_read,
+						eeprom_map->mem_settings[i].data_type);
+					*memptr = (uint8_t)gc_read;
+					memptr++;
+				}
+				else {
+					e_ctrl->i2c_client.i2c_func_tbl->i2c_write(
+ 						&(e_ctrl->i2c_client), 0xd4,
+ 						0x80 | ((eeprom_map->mem_settings[i].reg_addr >> 8) & 0xff),
+						eeprom_map->mem_settings[i].data_type);
+					e_ctrl->i2c_client.i2c_func_tbl->i2c_write(
+ 						&(e_ctrl->i2c_client), 0xd5,
+ 						eeprom_map->mem_settings[i].reg_addr & 0xff,
+						eeprom_map->mem_settings[i].data_type);
+					e_ctrl->i2c_client.i2c_func_tbl->i2c_write(
+ 						&(e_ctrl->i2c_client), 0xf3, 0x20,
+						eeprom_map->mem_settings[i].data_type);
+					e_ctrl->i2c_client.i2c_func_tbl->i2c_write(
+ 						&(e_ctrl->i2c_client), 0xf3, 0x88,
+						eeprom_map->mem_settings[i].data_type);
+					msleep(eeprom_map->mem_settings[i].delay);
+					for(gc = 0; gc < eeprom_map->mem_settings[i].reg_data; gc++) {
+						msleep(eeprom_map->mem_settings[i].delay);
+						rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_read(
+							&(e_ctrl->i2c_client), 0xd7, &gc_read,
+							eeprom_map->mem_settings[i].data_type);
+						if (rc < 0) {
+							pr_err("%s: read failed\n",
+								__func__);
+							goto clean_up;
+						}
+						*memptr = (uint8_t)gc_read;
+						memptr++;
+					}
+				}
+			}
+			break;
 			default:
 				pr_err("%s: %d Invalid i2c operation LC:%d, op: %d\n",
 					__func__, __LINE__, i,
@@ -696,7 +969,7 @@ static int msm_eeprom_config(struct msm_eeprom_ctrl_t *e_ctrl,
 		if (e_ctrl->userspace_probe == 0) {
 			pr_err("%s:%d Eeprom already probed at kernel boot",
 				__func__, __LINE__);
-			rc = -EINVAL;
+			rc = -EALREADY;//return a special errno tell user space eeprom has already probed at kernel boot
 			break;
 		}
 		if (e_ctrl->cal_data.num_data == 0) {
@@ -1665,7 +1938,7 @@ static int msm_eeprom_config32(struct msm_eeprom_ctrl_t *e_ctrl,
 		if (e_ctrl->userspace_probe == 0) {
 			pr_err("%s:%d Eeprom already probed at kernel boot",
 				__func__, __LINE__);
-			rc = -EINVAL;
+			rc = -EALREADY;//return a special errno tell user space eeprom has already probed at kernel boot
 			break;
 		}
 		if (e_ctrl->cal_data.num_data == 0) {
@@ -1722,6 +1995,253 @@ static long msm_eeprom_subdev_fops_ioctl32(struct file *file, unsigned int cmd,
 }
 
 #endif
+
+static camera_vendor_module_id hi556_lcetron_p400_get_otp_vendor_module_id(
+    struct msm_eeprom_ctrl_t *e_ctrl)
+{
+    uint8_t MODULE_INFO_OFFSET = 0x08;//please reference the otp spec.
+    uint8_t MID_FLAG_OFFSET = 0x00;
+    uint8_t vid=0;
+    uint8_t flag=0;
+    uint8_t *buffer = e_ctrl->cal_data.mapdata;
+    //bool rc = false;
+	uint8_t group_index = 0;
+
+    flag = buffer[MID_FLAG_OFFSET];
+	if(flag == 0x01){
+		group_index = 0 ;//Group1
+	}
+	else if(flag == 0x13){
+		group_index = 1 ;//Group2
+	}
+	else if(flag == 0x37){
+		group_index = 2 ;//Group3
+	}
+	else{
+		group_index = -1 ;
+		pr_err("Lct %s none group can be used, group_index=0x%x\n", __func__, group_index);
+	}
+    vid = buffer[MODULE_INFO_OFFSET  + group_index * 0x11];
+    //rc = (vid == VID_ZERO) ? true : false;
+    //if(rc == false) 
+	//	vid = VID_MAX;
+    pr_err("Lct %s vid=0x%x, flag=0x%x\n", __func__, vid, flag);
+    return vid;
+}
+
+static camera_vendor_module_id gc5025a_holitech_p400_get_otp_vendor_module_id(
+    struct msm_eeprom_ctrl_t *e_ctrl)
+{
+    uint8_t MODULE_INFO_OFFSET = 0x01;//please reference the otp spec.
+    uint8_t MID_FLAG_OFFSET = 0x00;
+    uint8_t mid=0;
+    uint8_t flag=0;
+    uint8_t *buffer = e_ctrl->cal_data.mapdata;
+    bool rc = false;
+	uint8_t group_index = 0;
+
+    flag = buffer[MID_FLAG_OFFSET];
+	if(flag == 0x01){
+		group_index = 0 ;//Group1
+	}
+	else{
+		group_index = -1 ;
+		pr_err("Lct %s none group can be used, group_index=0x%x\n", __func__, group_index);
+	}
+    mid = buffer[MODULE_INFO_OFFSET];
+    rc = (mid == MID_HOLITECH) ? true : false;
+    if(rc == false) 
+		mid = MID_NULL;
+    pr_err("Lct %s mid=0x%x, flag=0x%x\n", __func__, mid, flag);
+    return mid;
+}
+
+static camera_vendor_module_id s5k4h7_ofilm_p407_get_otp_vendor_module_id(
+    struct msm_eeprom_ctrl_t *e_ctrl)
+{
+    uint8_t MODULE_INFO_OFFSET = 0x0B;//please reference the otp spec.
+    uint8_t MID_FLAG_OFFSET = 0x00;
+    uint8_t mid=0;
+    uint8_t flag=0;
+    uint8_t *buffer = e_ctrl->cal_data.mapdata;
+    bool rc = false;
+	uint8_t group_index = 0;
+
+    flag = buffer[MID_FLAG_OFFSET];
+	if(flag == 0x40){
+		group_index = 0 ;//Group1
+	}
+	else{
+		group_index = -1 ;
+		pr_err("Lct %s none group can be used, group_index=0x%x\n", __func__, group_index);
+	}
+    mid = buffer[MODULE_INFO_OFFSET];
+    rc = (mid == MID_OFILM) ? true : false;
+    if(rc == false) 
+		mid = MID_NULL;
+    pr_err("Lct %s mid=0x%x, flag=0x%x\n", __func__, mid, flag);
+    return mid;
+}
+
+static camera_vendor_module_id s5k4h7_qtech_p407_get_otp_vendor_module_id(
+    struct msm_eeprom_ctrl_t *e_ctrl)
+{
+    uint8_t MODULE_INFO_OFFSET = 0x0B;//please reference the otp spec.
+    uint8_t MID_FLAG_OFFSET = 0x00;
+    uint8_t mid=0;
+    uint8_t flag=0;
+    uint8_t *buffer = e_ctrl->cal_data.mapdata;
+    bool rc = false;
+	uint8_t group_index = 0;
+
+    flag = buffer[MID_FLAG_OFFSET];
+	if(flag == 0x40){
+		group_index = 0 ;//Group1
+	}
+	else{
+		group_index = -1 ;
+		pr_err("Lct %s none group can be used, group_index=0x%x\n", __func__, group_index);
+	}
+    mid = buffer[MODULE_INFO_OFFSET];
+    rc = (mid == MID_QTECH) ? true : false;
+    if(rc == false) 
+		mid = MID_NULL;
+    pr_err("Lct %s mid=0x%x, flag=0x%x\n", __func__, mid, flag);
+    return mid;
+}
+
+static camera_vendor_module_id s5k4e8_ofilm_p407_get_otp_vendor_module_id(
+    struct msm_eeprom_ctrl_t *e_ctrl)
+{
+    uint8_t MID_FLAG_OFFSET = 0x00;
+    uint8_t MODULE_INFO_OFFSET = 0x01;//please reference the otp spec.
+	uint8_t GROUP_OFFSET = 16;
+    uint8_t mid=0;
+    uint8_t flag=0;
+    uint8_t *buffer = e_ctrl->cal_data.mapdata;
+    bool rc = false;
+	uint8_t group_index = 0;
+
+    flag = buffer[MID_FLAG_OFFSET];
+	if(flag == 0x40){
+		group_index = 0 ;//Group1
+	}
+	else if(flag == 0x04){
+		group_index = 1 ;//Group2
+	}
+	else if(flag == 0x01){
+		group_index = 2 ;//Group3
+	}
+	else{
+		group_index = -1 ;
+		pr_err("Lct %s none group can be used, group_index=0x%x\n", __func__, group_index);
+	}
+    mid = buffer[MODULE_INFO_OFFSET + GROUP_OFFSET *group_index];
+    rc = (mid == MID_OFILM) ? true : false;
+    if(rc == false) 
+		mid = MID_NULL;
+    pr_err("Lct %s mid=0x%x, flag=0x%x\n", __func__, mid, flag);
+    return mid;
+}
+
+static camera_vendor_module_id s5kc505a_ofilm_p407_get_otp_vendor_module_id(
+    struct msm_eeprom_ctrl_t *e_ctrl)
+{
+    uint8_t MID_FLAG_OFFSET = 0x00;
+    uint8_t MODULE_INFO_OFFSET = 0x01;//please reference the otp spec.
+	uint8_t GROUP_OFFSET = 16;
+    uint8_t mid=0;
+    uint8_t flag=0;
+    uint8_t *buffer = e_ctrl->cal_data.mapdata;
+    bool rc = false;
+	uint8_t group_index = 0;
+
+    flag = buffer[MID_FLAG_OFFSET];
+	if(flag == 0x40){
+		group_index = 0 ;//Group1
+	}
+	else if(flag == 0x04){
+		group_index = 1 ;//Group2
+	}
+	else if(flag == 0x01){
+		group_index = 2 ;//Group3
+	}
+	else{
+		group_index = -1 ;
+		pr_err("Lct %s none group can be used, group_index=0x%x\n", __func__, group_index);
+	}
+    mid = buffer[MODULE_INFO_OFFSET + GROUP_OFFSET *group_index];
+    rc = (mid == MID_OFILM) ? true : false;
+    if(rc == false) 
+		mid = MID_NULL;
+    pr_err("Lct %s mid=0x%x, flag=0x%x\n", __func__, mid, flag);
+    return mid;
+}
+
+static camera_vendor_module_id s5kc505a_qtech_p407_get_otp_vendor_module_id(
+    struct msm_eeprom_ctrl_t *e_ctrl)
+{
+    uint8_t MID_FLAG_OFFSET = 0x00;
+    uint8_t MODULE_INFO_OFFSET = 0x01;//please reference the otp spec.
+	uint8_t GROUP_OFFSET = 16;
+    uint8_t mid=0;
+    uint8_t flag=0;
+    uint8_t *buffer = e_ctrl->cal_data.mapdata;
+    bool rc = false;
+	uint8_t group_index = 0;
+
+    flag = buffer[MID_FLAG_OFFSET];
+	if(flag == 0x40){
+		group_index = 0 ;//Group1
+	}
+	else if(flag == 0x04){
+		group_index = 1 ;//Group2
+	}
+	else if(flag == 0x01){
+		group_index = 2 ;//Group3
+	}
+	else{
+		group_index = -1 ;
+		pr_err("Lct %s none group can be used, group_index=0x%x\n", __func__, group_index);
+	}
+    mid = buffer[MODULE_INFO_OFFSET + GROUP_OFFSET *group_index];
+    rc = (mid == MID_QTECH) ? true : false;
+    if(rc == false) 
+		mid = MID_NULL;
+    pr_err("Lct %s mid=0x%x, flag=0x%x\n", __func__, mid, flag);
+    return mid;
+}
+
+static uint8_t get_otp_vendor_module_id(struct msm_eeprom_ctrl_t *e_ctrl, const char *eeprom_name)
+{
+    camera_vendor_module_id module_id=MID_NULL;
+    if(strcmp(eeprom_name,"lenovo_hi556_lcetron_back_i") == 0){
+        module_id = hi556_lcetron_p400_get_otp_vendor_module_id(e_ctrl);
+    }
+	else if(strcmp(eeprom_name,"lenovo_gc5025a_holitech_back_i") == 0){
+        module_id = gc5025a_holitech_p400_get_otp_vendor_module_id(e_ctrl);
+    }
+    else if(strcmp(eeprom_name,"lenovo_s5k4h7_ofilm_i") == 0){
+        module_id = s5k4h7_ofilm_p407_get_otp_vendor_module_id(e_ctrl);
+    }
+	else if(strcmp(eeprom_name,"lenovo_s5k4h7_qtech_i") == 0){
+        module_id = s5k4h7_qtech_p407_get_otp_vendor_module_id(e_ctrl);
+    }
+  else if(strcmp(eeprom_name,"lenovo_s5kc505a_ofilm_front_i") == 0){
+        module_id = s5kc505a_ofilm_p407_get_otp_vendor_module_id(e_ctrl);
+    }
+  else if(strcmp(eeprom_name,"lenovo_s5kc505a_qtech_front_ii") == 0){
+        module_id = s5kc505a_qtech_p407_get_otp_vendor_module_id(e_ctrl);
+    }
+	else if(strcmp(eeprom_name,"lenovo_s5k4e8_ofilm_front_i") == 0){
+        module_id = s5k4e8_ofilm_p407_get_otp_vendor_module_id(e_ctrl);
+    }
+
+	pr_err("%s eeprom_name=%s, module_id=%d\n",__func__,eeprom_name,module_id);
+	if(module_id>=MID_MAX) module_id = MID_NULL;
+
+	return ((uint8_t)module_id);
+}
 
 static int msm_eeprom_platform_probe(struct platform_device *pdev)
 {
@@ -1868,6 +2388,13 @@ static int msm_eeprom_platform_probe(struct platform_device *pdev)
 			CDBG("memory_data[%d] = 0x%X\n", j,
 				e_ctrl->cal_data.mapdata[j]);
 
+		if(eb_info->eeprom_name != NULL){
+			s_vendor_eeprom[pdev->id].module_id = get_otp_vendor_module_id(e_ctrl, eb_info->eeprom_name);
+			strcpy(s_vendor_eeprom[pdev->id].eeprom_name, eb_info->eeprom_name);
+		}
+		else{
+			strcpy(s_vendor_eeprom[pdev->id].eeprom_name, "NULL");
+		}
 		e_ctrl->is_supported |= msm_eeprom_match_crc(&e_ctrl->cal_data);
 
 		rc = msm_camera_power_down(power_info,
