@@ -436,6 +436,9 @@ struct mdss_dsi_ctrl_pdata {
 	int irq_cnt;
 	int disp_te_gpio;
 	int rst_gpio;
+	/*LXF_P400_A01-53 modify lcd init code by huixiaolong at 20180918 add start*/
+	int pwr_gpio;
+	/*LXF_P400_A01-53 modify lcd init code by huixiaolong at 20180918 add end*/
 	int disp_en_gpio;
 	int bklt_en_gpio;
 	int vdd_ext_gpio;

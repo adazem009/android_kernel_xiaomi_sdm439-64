@@ -34,6 +34,11 @@
 #define DEFAULT_MDP_TRANSFER_TIME 14000
 
 #define VSYNC_DELAY msecs_to_jiffies(17)
+/*lc mike_zhu add  20181120 for lcd HW ID --start  */
+extern int ID0_status,ID1_status;
+/*lc mike_zhu add  20181120 for lcd HW ID --end  */
+int open = 0;
+
 
 DEFINE_LED_TRIGGER(bl_led_trigger);
 
@@ -212,11 +217,24 @@ static void mdss_dsi_panel_cmds_send(struct mdss_dsi_ctrl_pdata *ctrl,
 
 	mdss_dsi_cmdlist_put(ctrl, &cmdreq);
 }
+#ifdef CONFIG_KERNEL_CUSTOM_P407
 
-static char led_pwm1[2] = {0x51, 0x0};	/* DTYPE_DCS_WRITE1 */
-static struct dsi_cmd_desc backlight_cmd = {
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 1, sizeof(led_pwm1)},
+static unsigned char led_pwm1[3] = {0x50, 0x5A,0x23};
+static struct dsi_cmd_desc backlight_cmd1 = {
+	{DTYPE_DCS_LWRITE, 1, 0, 0, 1, sizeof(led_pwm1)},
 	led_pwm1
+};
+
+static unsigned char led_pwm2[3] = {0x90, 0x00,0x00};
+static struct dsi_cmd_desc backlight_cmd2 = {
+	{DTYPE_DCS_LWRITE, 1, 0, 0, 1, sizeof(led_pwm2)},
+	led_pwm2
+};
+
+static unsigned char led_pwm3[3] = {0x94, 0x2c,0x00};
+static struct dsi_cmd_desc backlight_cmd3 = {
+	{DTYPE_DCS_LWRITE, 1, 0, 0, 1, sizeof(led_pwm3)},
+	led_pwm3
 };
 
 static void mdss_dsi_panel_bklt_dcs(struct mdss_dsi_ctrl_pdata *ctrl, int level)
@@ -230,14 +248,212 @@ static void mdss_dsi_panel_bklt_dcs(struct mdss_dsi_ctrl_pdata *ctrl, int level)
 			return;
 	}
 
-	pr_debug("%s: level=%d\n", __func__, level);
+	pr_err("%s: level=%x\n", __func__, level);
+ 
+	led_pwm2[1] = (unsigned char)((level & 0xff0) >> 4);
+	pr_err("%s: level=%x\n", __func__, led_pwm2[1]);
+	led_pwm2[2] = (unsigned char)(level & 0x0f);
+	pr_err("%s: level=%x\n", __func__, led_pwm2[2]);
+    
 
+	memset(&cmdreq, 0, sizeof(cmdreq));
+//	cmdreq.cmds = &backlight_cmd;
+	cmdreq.cmds_cnt = 1;
+	cmdreq.flags = CMD_REQ_COMMIT;
+	cmdreq.rlen = 0;
+	cmdreq.cb = NULL;
+	
+	cmdreq.cmds = &backlight_cmd1;
+	mdss_dsi_cmdlist_put(ctrl, &cmdreq);
+	cmdreq.cmds = &backlight_cmd2;
+	mdss_dsi_cmdlist_put(ctrl, &cmdreq);
+	cmdreq.cmds = &backlight_cmd3;
+	mdss_dsi_cmdlist_put(ctrl, &cmdreq);
+
+	if (ctrl->bklt_dcs_op_mode == DSI_HS_MODE)
+		cmdreq.flags |= CMD_REQ_HS_MODE;
+	else
+		cmdreq.flags |= CMD_REQ_LP_MODE;
+
+	mdss_dsi_cmdlist_put(ctrl, &cmdreq);
+}
+
+#else
+/*lc mike_zhu 20181031 modify for boe  lcd pwm  --------------start-----------*/
+
+static char led_pwm1[2] = {0x51, 0x0};	/* DTYPE_DCS_WRITE1 */
+static struct dsi_cmd_desc backlight_cmd = {
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 1, sizeof(led_pwm1)},
+	led_pwm1
+};
+//boe lcd  pwm			
+static unsigned char led_pwm2[2] = {0x53, 0x2C};
+static unsigned char led_pwm3[2] = {0x51, 0x66};
+//static unsigned char led_pwm4[2] = {0x55, 0x10};
+static unsigned char led_pwm5[2] = {0x5E, 0xB7};
+static unsigned char led_pwm6[5] = {0xE0, 0x12, 0x55, 0x01, 0x17};
+static struct dsi_cmd_desc backlight_cmd2 = {
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 1, sizeof(led_pwm2)},
+	led_pwm2
+};
+static struct dsi_cmd_desc backlight_cmd3 = {
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 1, sizeof(led_pwm3)},
+	led_pwm3
+};
+/*static struct dsi_cmd_desc backlight_cmd4 = {
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 1, sizeof(led_pwm4)},
+	led_pwm4
+};*/
+static struct dsi_cmd_desc backlight_cmd5 = {
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 1, sizeof(led_pwm5)},
+	led_pwm5
+};
+
+static struct dsi_cmd_desc backlight_cmd6 = {
+	{DTYPE_DCS_LWRITE, 1, 0, 0, 1, sizeof(led_pwm6)},
+	led_pwm6
+};
+//INNOLUX lcd bl control
+static unsigned char led_pwm11[2] = {0x51, 0x0};
+static unsigned char led_pwm12[2] = {0x53, 0x2C};
+static unsigned char led_pwm13[2] = {0x55, 0x00};
+static struct dsi_cmd_desc backlight_cmd11 = {
+
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 1, sizeof(led_pwm11)},
+	led_pwm11
+};
+static struct dsi_cmd_desc backlight_cmd12 = {
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 1, sizeof(led_pwm12)},
+	led_pwm12
+};
+static struct dsi_cmd_desc backlight_cmd13 = {
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 1, sizeof(led_pwm13)},
+	led_pwm13
+};
+
+/*lc mike_zhu 20181029 modify for boe  lcd pwm  --------------end-----------*/
+static void mdss_dsi_panel_bklt_dcs(struct mdss_dsi_ctrl_pdata *ctrl, int level)
+{
+	struct dcs_cmd_req cmdreq;
+	struct mdss_panel_info *pinfo;
+
+	pinfo = &(ctrl->panel_data.panel_info);
+	if (pinfo->dcs_cmd_by_left) {
+		if (ctrl->ndx != DSI_CTRL_LEFT)
+			return;
+	}
+
+	pr_debug("%s: level=%d\n", __func__, level);
+/*lc mike_zhu 20181029 modify for boe  lcd pwm  --------------start-----------*/
+pr_err("mike_zhu .%s ID0_status= %d,ID1_status= %d\n",__func__,ID0_status,ID1_status);
+if ((ID0_status==1&&ID1_status==0)||(ID0_status==0&&ID1_status==0))
+{
+//	led_pwm3[1] = (unsigned char)((level & 0xff0)>>4);
+//	led_pwm3[2] = (unsigned char)(level & 0x0f);
+//	pr_err("mike_zhu .%s led_pwm3[1]= 0x%x,led_pwm3[2]=0x%x\n",__func__,led_pwm3[1],led_pwm3[2]);
+	int new_1 = 0;
+	int new_2 = 0;
+	int old_1 = led_pwm2[1];
+	int old_2 = led_pwm6[3];
+        if(level>1){
+           level = (217 * level)/255; 
+        }
+        pr_debug("%s: level_00=%d\n", __func__, level);
+
+	led_pwm3[1] = (unsigned char)level;
+        if(open && (0 < led_pwm3[1]) && (16 > led_pwm3[1])){
+         led_pwm2[1] = (unsigned char)0x24;
+//         open = 0;
+         pr_debug("tom han .%s open = %d\n",__func__,open);
+        }
+	if(open){
+//	  led_pwm6[3] = (unsigned char)0x31;
+	  led_pwm6[3] = (unsigned char)0x01;
+	  open = 0;	
+	}
+        else{
+          led_pwm2[1] = (unsigned char)0x2C;
+	  led_pwm6[3] = (unsigned char)0x71;
+        }
+pr_debug("%s: tom han open backlight_1\n", __func__);
+pr_debug("tom han .%s led_pwm3[1]= %d\n",__func__,led_pwm3[1]);
+if(led_pwm3[1]>72)
+{
+led_pwm5[1]=led_pwm3[1]-72;
+}
+else
+{
+led_pwm5[1]=0;
+}
+
+pr_debug("tom han .%s force value led_pwm3[1]= %d,led_pwm5[1]=%d\n",__func__,led_pwm3[1],led_pwm5[1]);
+	new_1 = led_pwm2[1];
+	new_2 = led_pwm6[3];
+	memset(&cmdreq, 0, sizeof(cmdreq));
+	cmdreq.cmds_cnt = 1;
+	cmdreq.flags = CMD_REQ_COMMIT;
+	cmdreq.rlen = 0;
+	cmdreq.cb = NULL;
+	if(old_2 != new_2){
+	cmdreq.cmds = &backlight_cmd6;
+	mdss_dsi_cmdlist_put(ctrl, &cmdreq);
+	}
+	if(old_1 != new_1){
+	cmdreq.cmds = &backlight_cmd2;
+	mdss_dsi_cmdlist_put(ctrl, &cmdreq);
+	}
+	cmdreq.cmds = &backlight_cmd3;
+	mdss_dsi_cmdlist_put(ctrl, &cmdreq);
+//	cmdreq.cmds = &backlight_cmd4;
+//	mdss_dsi_cmdlist_put(ctrl, &cmdreq);
+	cmdreq.cmds = &backlight_cmd5;
+	mdss_dsi_cmdlist_put(ctrl, &cmdreq);
+
+	if(led_pwm3[1] == 0){
+  	  open = 1;
+	  led_pwm2[1] = (unsigned char)0x2C;
+ 	  led_pwm6[3] = (unsigned char)0x01;
+ 	}
+}
+/*lc tom han 20181215 modify for innolux  lcd pwm  --------------start-----------*/
+else if (ID0_status==1&&ID1_status==1)
+{
+      if(level>1){
+           level = (220 * level)/255; 
+      }
+     pr_err("%s: level_11=%d\n", __func__, level);
+     led_pwm11[1] = (unsigned char)level;
+pr_err("%s: tom han open backlight_2\n", __func__);
+pr_debug("tom han .%s led_pwm11[1]= %d\n",__func__,led_pwm11[1]);
+
+	memset(&cmdreq, 0, sizeof(cmdreq));
+	cmdreq.cmds_cnt = 1;
+	cmdreq.flags = CMD_REQ_COMMIT;
+	cmdreq.rlen = 0;
+	cmdreq.cb = NULL;
+
+
+	cmdreq.cmds = &backlight_cmd11;
+	mdss_dsi_cmdlist_put(ctrl, &cmdreq);
+	cmdreq.cmds = &backlight_cmd12;
+	mdss_dsi_cmdlist_put(ctrl, &cmdreq);
+	cmdreq.cmds = &backlight_cmd13;
+	mdss_dsi_cmdlist_put(ctrl, &cmdreq);
+}
+/*lc tom han 20181215 modify for innolux  lcd pwm  --------------end-----------*/
+else
+{
+//qcom default code
+        if(level>1){
+           level = (215 * level)/255; 
+        }
+        pr_debug("%s: level_**=%d\n", __func__, level);
 	led_pwm1[1] = (unsigned char)level;
 
 	memset(&cmdreq, 0, sizeof(cmdreq));
 	cmdreq.cmds = &backlight_cmd;
 	cmdreq.cmds_cnt = 1;
-	cmdreq.flags = CMD_REQ_COMMIT;
+	cmdreq.flags = CMD_REQ_COMMIT ;
 	cmdreq.rlen = 0;
 	cmdreq.cb = NULL;
 
@@ -248,6 +464,9 @@ static void mdss_dsi_panel_bklt_dcs(struct mdss_dsi_ctrl_pdata *ctrl, int level)
 
 	mdss_dsi_cmdlist_put(ctrl, &cmdreq);
 }
+/*lc mike_zhu 20181029 modify for boe  lcd pwm  --------------end-----------*/
+}
+#endif
 
 static void mdss_dsi_panel_set_idle_mode(struct mdss_panel_data *pdata,
 							bool enable)
@@ -318,6 +537,14 @@ static int mdss_dsi_request_gpios(struct mdss_dsi_ctrl_pdata *ctrl_pdata)
 			rc);
 		goto rst_gpio_err;
 	}
+/*lc mike_zhu 20181030 modify for boe  lcd 3.3v  --------------start-----------*/
+	rc = gpio_request(ctrl_pdata->pwr_gpio, "disp_power_enable");
+	if (rc) {
+		pr_err("request power gpio failed, rc=%d\n",
+			rc);
+		//goto pwr_gpio_err;
+	}
+/*lc mike_zhu 20181030 modify for boe  lcd 3.3v  --------------end-----------*/
 	if (gpio_is_valid(ctrl_pdata->bklt_en_gpio)) {
 		rc = gpio_request(ctrl_pdata->bklt_en_gpio,
 						"bklt_enable");
@@ -345,7 +572,7 @@ static int mdss_dsi_request_gpios(struct mdss_dsi_ctrl_pdata *ctrl_pdata)
 		}
 	}
 	return rc;
-
+/*LXF_P400_A01-53 modify lcd init code by huixiaolong at 20180918 add start*/
 mode_gpio_err:
 	if (gpio_is_valid(ctrl_pdata->vdd_ext_gpio))
 		gpio_free(ctrl_pdata->vdd_ext_gpio);
@@ -353,14 +580,18 @@ vdd_en_gpio_err:
 	if (gpio_is_valid(ctrl_pdata->bklt_en_gpio))
 		gpio_free(ctrl_pdata->bklt_en_gpio);
 bklt_en_gpio_err:
-	gpio_free(ctrl_pdata->rst_gpio);
+		gpio_free(ctrl_pdata->rst_gpio);
+
+//r_gpio_err:
+//pio_free(ctrl_pdata->pwr_gpio);
 rst_gpio_err:
 	if (gpio_is_valid(ctrl_pdata->disp_en_gpio))
 		gpio_free(ctrl_pdata->disp_en_gpio);
 disp_en_gpio_err:
 	return rc;
+/*LXF_P400_A01-53 modify lcd init code by huixiaolong at 20180918 add end*/
 }
-
+extern int focaltech_gesture_enable;
 int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 {
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
@@ -446,6 +677,21 @@ int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 				usleep_range(100, 110);
 			}
 
+#ifdef CONFIG_KERNEL_CUSTOM_P407
+			rc = gpio_direction_output(64,0);
+			mdelay(1);
+			//set tp_reset 1
+			rc = gpio_direction_output(64,1);
+			if(rc){
+				 {
+					pr_err("%s: tom han unable to set 1 to tp_reset \n",
+						__func__);
+					goto exit;
+				}			
+			}
+			mdelay(1);
+#endif
+
 			if (pdata->panel_info.rst_seq_len) {
 				rc = gpio_direction_output(ctrl_pdata->rst_gpio,
 					pdata->panel_info.rst_seq[0]);
@@ -463,7 +709,8 @@ int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 					usleep_range((pinfo->rst_seq[i] * 1000),
 					(pinfo->rst_seq[i] * 1000) + 10);
 			}
-
+//			msleep(200);
+#ifndef CONFIG_KERNEL_CUSTOM_P407
 			if (gpio_is_valid(ctrl_pdata->bklt_en_gpio)) {
 
 				if (ctrl_pdata->bklt_en_gpio_invert)
@@ -479,6 +726,7 @@ int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 					goto exit;
 				}
 			}
+#endif
 		}
 
 		if (gpio_is_valid(ctrl_pdata->mode_gpio)) {
@@ -504,7 +752,6 @@ int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 		}
 	} else {
 		if (gpio_is_valid(ctrl_pdata->bklt_en_gpio)) {
-
 			if (ctrl_pdata->bklt_en_gpio_invert)
 				gpio_set_value((ctrl_pdata->bklt_en_gpio), 1);
 			else
@@ -517,11 +764,53 @@ int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 			usleep_range(100, 110);
 			gpio_free(ctrl_pdata->disp_en_gpio);
 		}
+#if defined (CONFIG_KERNEL_CUSTOM_P407)
+	if(focaltech_gesture_enable){
+		//add tp_reset to 1
+			rc = gpio_direction_output(64,0);
+			mdelay(1);
+			//set tp_reset 1
+			rc = gpio_direction_output(64,1);
+			if(rc){
+				 {
+					pr_err("%s: tom han unable to set 1 to tp_reset \n",
+						__func__);
+					goto exit;
+				}			
+			}
+			mdelay(1);
+		}else{
+			//add tp_reset to 0
+			rc = gpio_direction_output(64,0);
+			if(rc){
+				 {
+					pr_err("%s: tom han unable to set 0 to tp_reset \n",
+						__func__);
+					goto exit;
+				}			
+			}
+
 		gpio_set_value((ctrl_pdata->rst_gpio), 0);
+		mdelay(1);
 		gpio_free(ctrl_pdata->rst_gpio);
+		mdelay(1);
+}
 		if (gpio_is_valid(ctrl_pdata->mode_gpio))
 			gpio_free(ctrl_pdata->mode_gpio);
 	}
+#else 
+//		gpio_set_value((ctrl_pdata->rst_gpio), 0);
+//		mdelay(1);
+#ifndef CONFIG_KERNEL_CUSTOM_P407
+		gpio_free(ctrl_pdata->rst_gpio);
+		mdelay(1);
+		if (gpio_is_valid(ctrl_pdata->mode_gpio))
+			gpio_free(ctrl_pdata->mode_gpio);
+#endif
+	}
+
+#endif
+
 
 exit:
 	return rc;
@@ -2961,7 +3250,38 @@ static int mdss_panel_parse_dt(struct device_node *np,
 error:
 	return -EINVAL;
 }
+/*lc mike_zhu 20181102 add  for lcd info node ---start */
+char g_lcd_id[128];
+static ssize_t msm_fb_lcd_name(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	ssize_t ret = 0;
+	sprintf(buf, "%s\n", g_lcd_id);
+	ret = strlen(buf) + 1;
+	return ret;
+}
 
+static DEVICE_ATTR(lcd_name,0664,msm_fb_lcd_name,NULL);
+static struct kobject *msm_lcd_name;
+static int msm_lcd_name_create_sysfs(void)
+{
+	int ret;
+	msm_lcd_name=kobject_create_and_add("android_lcd",NULL);
+
+	if(msm_lcd_name==NULL){
+		pr_info("msm_lcd_name_create_sysfs_ failed\n");
+		ret=-ENOMEM;
+		return ret;
+	}
+
+	ret=sysfs_create_file(msm_lcd_name,&dev_attr_lcd_name.attr);
+	if(ret){
+		pr_info("%s failed \n",__func__);
+		kobject_del(msm_lcd_name);
+	}
+	return 0;
+}
+/*lc mike_zhu 20181102 add  for lcd info node ---end */
 int mdss_dsi_panel_init(struct device_node *node,
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata,
 	int ndx)
@@ -2987,6 +3307,10 @@ int mdss_dsi_panel_init(struct device_node *node,
 		pr_info("%s: Panel Name = %s\n", __func__, panel_name);
 		strlcpy(&pinfo->panel_name[0], panel_name, MDSS_MAX_PANEL_LEN);
 	}
+/*lc mike_zhu 20181102 add  for lcd info node ---start */
+	/*add for device name node */
+	strcpy(g_lcd_id,panel_name);
+/*lc mike_zhu 20181102 add  for lcd info node ---end */
 	rc = mdss_panel_parse_dt(node, ctrl_pdata);
 	if (rc) {
 		pr_err("%s:%d panel dt parse failed\n", __func__, __LINE__);
@@ -3007,5 +3331,8 @@ int mdss_dsi_panel_init(struct device_node *node,
 			mdss_dsi_panel_apply_display_setting;
 	ctrl_pdata->switch_mode = mdss_dsi_panel_switch_mode;
 	ctrl_pdata->panel_data.get_idle = mdss_dsi_panel_get_idle_mode;
+/*lc mike_zhu 20181102 add  for lcd info node ---start */
+	msm_lcd_name_create_sysfs();
+/*lc mike_zhu 20181102 add  for lcd info node ---end */
 	return 0;
 }

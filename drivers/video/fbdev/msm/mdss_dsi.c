@@ -44,9 +44,10 @@ static struct mdss_dsi_data *mdss_dsi_res;
 
 #define DSI_DISABLE_PC_LATENCY 100
 #define DSI_ENABLE_PC_LATENCY PM_QOS_DEFAULT_VALUE
-
 static struct pm_qos_request mdss_dsi_pm_qos_request;
-
+/*lc mike_zhu add  20181120 for lcd HW ID --start  */
+int ID0_status,ID1_status;
+/*lc mike_zhu add  20181120 for lcd HW ID --end  */
 void mdss_dump_dsi_debug_bus(u32 bus_dump_flag,
 	u32 **dump_mem)
 {
@@ -363,6 +364,7 @@ static int mdss_dsi_regulator_init(struct platform_device *pdev,
 	return rc;
 }
 
+extern int focaltech_gesture_enable;
 static int mdss_dsi_panel_power_off(struct mdss_panel_data *pdata)
 {
 	int ret = 0;
@@ -390,17 +392,56 @@ static int mdss_dsi_panel_power_off(struct mdss_panel_data *pdata)
 			pr_err("%s: unable to set dir for vdd gpio\n",
 					__func__);
 	}
+#if defined(CONFIG_KERNEL_CUSTOM_P407)
+		if (mdss_dsi_pinctrl_set_state(ctrl_pdata, false))
+			pr_debug("reset disable: pinctrl not enabled\n");
 
-	if (mdss_dsi_pinctrl_set_state(ctrl_pdata, false))
-		pr_debug("reset disable: pinctrl not enabled\n");
-
+		printk("andy double tap func:%s,line:%d focaltech_gesture_enable:%d\n",__func__,__LINE__,focaltech_gesture_enable);
+		if(focaltech_gesture_enable){
+			ret = msm_mdss_enable_vreg(
+				ctrl_pdata->panel_power_data.vreg_config,
+				ctrl_pdata->panel_power_data.num_vreg, 1);
+			if (ret)
+				pr_err("%s: failed to disable vregs for %s\n",
+					__func__, __mdss_dsi_pm_name(DSI_PANEL_PM));
+		
+			gpio_direction_output(ctrl_pdata->pwr_gpio, 1);
+			gpio_set_value(ctrl_pdata->pwr_gpio, 1);
+		}else{
+			ret = msm_mdss_enable_vreg(
+			ctrl_pdata->panel_power_data.vreg_config,
+			ctrl_pdata->panel_power_data.num_vreg, 0);
+			if (ret)
+				pr_err("%s: failed to disable vregs for %s\n",
+					__func__, __mdss_dsi_pm_name(DSI_PANEL_PM));
+		
+			gpio_direction_output(ctrl_pdata->pwr_gpio, 0);
+			gpio_set_value(ctrl_pdata->pwr_gpio, 0);
+			gpio_free(ctrl_pdata->pwr_gpio);
+		}
+		
+#else 
 	ret = msm_mdss_enable_vreg(
 		ctrl_pdata->panel_power_data.vreg_config,
 		ctrl_pdata->panel_power_data.num_vreg, 0);
 	if (ret)
 		pr_err("%s: failed to disable vregs for %s\n",
 			__func__, __mdss_dsi_pm_name(DSI_PANEL_PM));
-
+#ifdef CONFIG_KERNEL_CUSTOM_P407
+	mdelay(10);
+#endif
+	/*LXF_P400_A01-53 modify lcd init code by huixiaolong at 20180918 add start*/
+	gpio_direction_output(ctrl_pdata->pwr_gpio, 0);
+	gpio_set_value(ctrl_pdata->pwr_gpio, 0);
+	gpio_free(ctrl_pdata->pwr_gpio);
+#ifdef CONFIG_KERNEL_CUSTOM_P407
+	mdelay(2);
+	gpio_free(ctrl_pdata->rst_gpio);
+	if (gpio_is_valid(ctrl_pdata->mode_gpio))
+	gpio_free(ctrl_pdata->mode_gpio);
+#endif
+	/*LXF_P400_A01-53 modify lcd init code by huixiaolong at 20180918 add end*/
+#endif
 end:
 	return ret;
 }
@@ -417,6 +458,30 @@ static int mdss_dsi_panel_power_on(struct mdss_panel_data *pdata)
 
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
+
+#ifdef CONFIG_KERNEL_CUSTOM_P407
+	mdelay(2);
+	if (gpio_is_valid(ctrl_pdata->rst_gpio)){
+	mdelay(1);
+		ret = gpio_direction_output(
+				ctrl_pdata->rst_gpio, 0);
+		if (ret)
+			pr_err("%s: unable to set dir for reset gpio\n",
+					__func__);
+	}
+	gpio_set_value(ctrl_pdata->rst_gpio, 0);
+	mdelay(2);
+
+	if (gpio_is_valid(ctrl_pdata->pwr_gpio)){
+	mdelay(1);
+		ret = gpio_direction_output(
+				ctrl_pdata->pwr_gpio, 1);
+		if (ret)
+			pr_err("%s: unable to set dir for power gpio\n",
+					__func__);
+	}
+	gpio_set_value(ctrl_pdata->pwr_gpio, 1);
+#endif
 
 	if (gpio_is_valid(ctrl_pdata->vdd_ext_gpio)) {
 		ret = gpio_direction_output(
@@ -435,7 +500,6 @@ static int mdss_dsi_panel_power_on(struct mdss_panel_data *pdata)
 			__func__, __mdss_dsi_pm_name(DSI_PANEL_PM));
 		return ret;
 	}
-
 	/*
 	 * If continuous splash screen feature is enabled, then we need to
 	 * request all the GPIOs that have already been configured in the
@@ -453,6 +517,32 @@ static int mdss_dsi_panel_power_on(struct mdss_panel_data *pdata)
 					__func__, ret);
 	}
 
+/*lc mike_zhu 20181029 modify for boe  lcd timing  --------------start-----------*/
+#ifndef CONFIG_KERNEL_CUSTOM_P407
+	if (gpio_is_valid(ctrl_pdata->pwr_gpio)){
+	mdelay(10);
+		ret = gpio_direction_output(
+				ctrl_pdata->pwr_gpio, 1);
+		if (ret)
+			pr_err("%s: unable to set dir for power gpio\n",
+					__func__);
+	}
+	gpio_set_value(ctrl_pdata->pwr_gpio, 1);
+#endif
+/*lc mike_zhu add for lcd 3.3V 20181029----------- end--------*/
+
+/*lc mike_zhu 20181029 modify for boe  lcd timing  --------------end-----------*/
+	
+	/*lc mike_zhu add  20181120 for lcd HW ID --start  */
+        mdelay(5);   //gpio set value after 3.3V
+#ifdef CONFIG_KERNEL_CUSTOM_P407
+	ID0_status = gpio_get_value(0);
+#else 
+	ID0_status = gpio_get_value(13);
+#endif
+	ID1_status = gpio_get_value(66);
+	pr_err("%s:tom han get lcd_detect id0=%d,id1=%d \n",__func__,ID0_status,ID1_status);
+        /*lc mike_zhu add  20181120 for lcd HW ID --end  */
 	return ret;
 }
 
@@ -1358,11 +1448,12 @@ static int mdss_dsi_off(struct mdss_panel_data *pdata, int power_state)
 		goto end;
 	}
 
+#ifndef CONFIG_KERNEL_CUSTOM_P407
 	if (mdss_panel_is_power_on(power_state)) {
 		pr_debug("%s: dsi_off with panel always on\n", __func__);
 		goto panel_power_ctrl;
 	}
-
+#endif
 	/*
 	 * Link clocks should be turned off before PHY can be disabled.
 	 * For command mode panels, all clocks are turned off prior to reaching
@@ -1377,6 +1468,13 @@ static int mdss_dsi_off(struct mdss_panel_data *pdata, int power_state)
 		mdss_dsi_clk_ctrl(ctrl_pdata, ctrl_pdata->dsi_clk_handle,
 				  MDSS_DSI_LINK_CLK, MDSS_DSI_CLK_OFF);
 
+#ifdef CONFIG_KERNEL_CUSTOM_P407
+	if (mdss_panel_is_power_on(power_state)) {
+		pr_debug("%s: dsi_off with panel always on\n", __func__);
+		goto panel_power_ctrl;
+	}
+#endif
+
 	if (!pdata->panel_info.ulps_suspend_enabled) {
 		/* disable DSI controller */
 		mdss_dsi_controller_cfg(0, pdata);
@@ -1384,6 +1482,8 @@ static int mdss_dsi_off(struct mdss_panel_data *pdata, int power_state)
 		/* disable DSI phy */
 		mdss_dsi_phy_disable(ctrl_pdata);
 	}
+	
+
 	ctrl_pdata->ctrl_state &= ~CTRL_STATE_DSI_ACTIVE;
 
 	mdss_dsi_clk_ctrl(ctrl_pdata, ctrl_pdata->dsi_clk_handle,
@@ -1617,6 +1717,14 @@ int mdss_dsi_on(struct mdss_panel_data *pdata)
 	if (pdata->panel_info.type == MIPI_CMD_PANEL)
 		mdss_dsi_clk_ctrl(ctrl_pdata, ctrl_pdata->dsi_clk_handle,
 				  MDSS_DSI_ALL_CLKS, MDSS_DSI_CLK_OFF);
+#ifdef CONFIG_KERNEL_CUSTOM_P407	
+	msleep(100);
+			if (gpio_is_valid(ctrl_pdata->bklt_en_gpio)) {
+					gpio_direction_output(
+						ctrl_pdata->bklt_en_gpio, 1);
+
+			}
+#endif 
 
 end:
 	pr_debug("%s-:\n", __func__);
@@ -2746,6 +2854,14 @@ static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 		rc = mdss_dsi_on(pdata);
 		mdss_dsi_op_mode_config(pdata->panel_info.mipi.mode,
 							pdata);
+/*#ifdef CONFIG_KERNEL_CUSTOM_P407	
+		mdelay(100);
+			if (gpio_is_valid(ctrl_pdata->bklt_en_gpio)) {
+					gpio_direction_output(
+						ctrl_pdata->bklt_en_gpio, 1);
+
+			}
+#endif */
 		break;
 	case MDSS_EVENT_UNBLANK:
 		if (ctrl_pdata->on_cmds.link_state == DSI_LP_MODE)
@@ -4222,7 +4338,15 @@ static int mdss_dsi_parse_gpio_params(struct platform_device *ctrl_pdev,
 	if (!gpio_is_valid(ctrl_pdata->rst_gpio))
 		pr_err("%s:%d, reset gpio not specified\n",
 						__func__, __LINE__);
-
+	/*LXF_P400_A01-53 modify lcd init code by huixiaolong at 20180918 add start*/
+//	#ifndef CONFIG_KERNEL_CUSTOM_P407
+	ctrl_pdata->pwr_gpio = of_get_named_gpio(ctrl_pdev->dev.of_node,
+			 "qcom,platform-pwr-gpio", 0);
+	if (!gpio_is_valid(ctrl_pdata->pwr_gpio))
+		pr_err("%s:%d, power gpio not specified\n",
+						__func__, __LINE__);
+//	#endif
+	/*LXF_P400_A01-53 modify lcd init code by huixiaolong at 20180918 add end*/
 	if (pinfo->mode_gpio_state != MODE_GPIO_NOT_VALID) {
 
 		ctrl_pdata->mode_gpio = of_get_named_gpio(
