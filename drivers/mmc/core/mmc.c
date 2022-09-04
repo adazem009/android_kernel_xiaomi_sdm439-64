@@ -82,7 +82,25 @@ static int mmc_switch_status(struct mmc_card *card, bool ignore_crc);
 static int mmc_decode_cid(struct mmc_card *card)
 {
 	u32 *resp = card->raw_cid;
-
+	char emmc0_id[] = "GP6BMB";	 //ok
+	char emmc0_name[] = "Samsung KMGP6001BM-B514 64+3"; // a31-1 b31-1 c31-1
+	char emmc1_id[] = "GD6BMB";  //ok
+	char emmc1_name[] = "Samsung KMGD6001BM-B421 32+3";  // a21-1 b21-1 c21-1
+	char emmc2_id[] = "hB8aP>";   //ok
+	char emmc2_name[] = "Hynix H9TQ27ADFTMCUR-KUM 32+3";   // a21-2  b21-2 c21-2
+	
+	char emmc3_id[] = "HAG4a2";   // ok
+	char emmc3_name[] = "Hynix H9TQ17ABJTCCUR-KUM 16+2";       //a01-2   b01-2  ok		
+	char emmc4_id[] = "QE63MB";  //ok
+	char emmc4_name[] = "Samsung KMQE60013M-B318  16+2";       //a01-1  b01-1  c01-1  ok
+	
+	char emmc5_id[] = "hC8aP>";	 //ok
+	char emmc5_name[] = "Hynix H9TQ52ADFTACUR-KUM  64+3"; //a31-2 b31-2 c31-2
+	char emmc6_id[] = "QD63MB";	//ok
+	char emmc6_name[] = "Samsung  KMQD60013M-B318    32+2";   // a11-1  b11-1   ok
+	
+	
+//	char emmc_unknow[] = "unknow";
 	/*
 	 * The selection of the format here is based upon published
 	 * specs from sandisk and from what people have reported.
@@ -103,6 +121,39 @@ static int mmc_decode_cid(struct mmc_card *card)
 		card->cid.serial	= UNSTUFF_BITS(resp, 16, 24);
 		card->cid.month		= UNSTUFF_BITS(resp, 12, 4);
 		card->cid.year		= UNSTUFF_BITS(resp, 8, 4) + 1997;
+	if(strcmp(card->cid.prod_name,emmc0_id)==0)
+		{
+			strcpy(card->cid.prod_version,emmc0_name);
+		}
+	else if(strcmp(card->cid.prod_name,emmc1_id)==0)
+		{
+			strcpy(card->cid.prod_version,emmc1_name);
+		}
+	else if(strcmp(card->cid.prod_name,emmc2_id)==0)
+		{
+			strcpy(card->cid.prod_version,emmc2_name);
+		}
+	else if(strcmp(card->cid.prod_name,emmc3_id)==0)
+	{
+		strcpy(card->cid.prod_version,emmc3_name);
+	}
+	else if(strcmp(card->cid.prod_name,emmc4_id)==0)
+	{
+		strcpy(card->cid.prod_version,emmc4_name);
+	}
+	else if(strcmp(card->cid.prod_name,emmc5_id)==0)
+	{
+		strcpy(card->cid.prod_version,emmc5_name);
+	}	
+	else if(strcmp(card->cid.prod_name,emmc6_id)==0)
+	{
+		strcpy(card->cid.prod_version,emmc6_name);
+	}	
+	else
+		{
+			strcpy(card->cid.prod_version,card->cid.prod_name);
+		}
+ 			
 		break;
 
 	case 2: /* MMC v2.0 - v2.2 */
@@ -120,6 +171,39 @@ static int mmc_decode_cid(struct mmc_card *card)
 		card->cid.serial	= UNSTUFF_BITS(resp, 16, 32);
 		card->cid.month		= UNSTUFF_BITS(resp, 12, 4);
 		card->cid.year		= UNSTUFF_BITS(resp, 8, 4) + 1997;
+	if(strcmp(card->cid.prod_name,emmc0_id)==0)
+		{
+			strcpy(card->cid.prod_version,emmc0_name);
+		}
+	else if(strcmp(card->cid.prod_name,emmc1_id)==0)
+		{
+			strcpy(card->cid.prod_version,emmc1_name);
+		}
+	else if(strcmp(card->cid.prod_name,emmc2_id)==0)
+		{
+			strcpy(card->cid.prod_version,emmc2_name);
+		}
+	else if(strcmp(card->cid.prod_name,emmc3_id)==0)
+		{
+			strcpy(card->cid.prod_version,emmc3_name);
+		}
+	else if(strcmp(card->cid.prod_name,emmc4_id)==0)
+		{
+			strcpy(card->cid.prod_version,emmc4_name);
+		}	
+	else if(strcmp(card->cid.prod_name,emmc5_id)==0)
+		{
+			strcpy(card->cid.prod_version,emmc5_name);
+		}		
+		else if(strcmp(card->cid.prod_name,emmc6_id)==0)
+		{
+			strcpy(card->cid.prod_version,emmc6_name);
+		}	
+	else
+		{
+			strcpy(card->cid.prod_version,card->cid.prod_name);
+		}
+ 			
 		break;
 
 	default:
@@ -859,6 +943,7 @@ MMC_DEV_ATTR(enhanced_rpmb_supported, "%#x\n",
 		card->ext_csd.enhanced_rpmb_supported);
 MMC_DEV_ATTR(rel_sectors, "%#x\n", card->ext_csd.rel_sectors);
 MMC_DEV_ATTR(ocr, "0x%08x\n", card->ocr);
+MMC_DEV_ATTR(version, "%s\n", card->cid.prod_version);	
 
 static ssize_t mmc_fwrev_show(struct device *dev,
 			      struct device_attribute *attr,
@@ -916,6 +1001,7 @@ static struct attribute *mmc_std_attrs[] = {
 	&dev_attr_rel_sectors.attr,
 	&dev_attr_ocr.attr,
 	&dev_attr_dsr.attr,
+	&dev_attr_version.attr,	
 	NULL,
 };
 ATTRIBUTE_GROUPS(mmc_std);

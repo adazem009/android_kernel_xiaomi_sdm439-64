@@ -41,7 +41,7 @@
 #include <linux/pm_runtime.h>
 #include <linux/nvmem-consumer.h>
 #include <trace/events/mmc.h>
-
+#include <linux/device.h>/* add  mike_zhu 20171120 card slot info for factory mode       */
 #include "sdhci-msm.h"
 #include "sdhci-msm-ice.h"
 #include "cmdq_hci.h"
@@ -4792,6 +4792,40 @@ static bool sdhci_msm_is_bootdevice(struct device *dev)
 	 */
 	return true;
 }
+/* add mike_zhu 20171120  card slot info for factory mode    start  */
+static struct kobject *card_slot_device = NULL;
+static struct sdhci_host *card_host =NULL;
+static ssize_t card_slot_status_show(struct device *dev,
+					       struct device_attribute *attr, char *buf)
+{
+	return snprintf(buf, PAGE_SIZE, "%d\n", mmc_gpio_get_cd(card_host->mmc));
+}
+
+static DEVICE_ATTR(card_slot_status, S_IRUGO ,
+						card_slot_status_show, NULL);
+
+int32_t card_slot_init_device_name(void)
+{
+	int32_t error = 0;
+	if(card_slot_device != NULL){
+		pr_err("card_slot already created\n");
+		return 0;
+	}
+	card_slot_device = kobject_create_and_add("card_slot", NULL);
+	if (card_slot_device == NULL) {
+		printk("%s: card_slot register failed\n", __func__);
+		error = -ENOMEM;
+		return error ;
+	}
+	error = sysfs_create_file(card_slot_device, &dev_attr_card_slot_status.attr);
+	if (error) {
+		printk("%s: card_slot_status_create_file failed\n", __func__);
+		kobject_del(card_slot_device);
+	}
+	
+	return 0 ;
+}
+/* add mike_zhu 20171120  card slot info for factory mode     end  */
 
 static int sdhci_msm_probe(struct platform_device *pdev)
 {
@@ -5312,6 +5346,9 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 		ret = device_create_file(&pdev->dev, &msm_host->polling);
 		if (ret)
 			goto remove_max_bus_bw_file;
+	}else{ /* add mike_zhu 20171120  card slot info for factory mode    */
+		card_host = dev_get_drvdata(&pdev->dev);
+		card_slot_init_device_name();	
 	}
 
 	msm_host->auto_cmd21_attr.show = show_auto_cmd21;
