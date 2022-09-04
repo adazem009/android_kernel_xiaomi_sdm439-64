@@ -52,6 +52,16 @@
 
 #include <linux/msm-bus.h>
 
+/*LXF_P400_C01-196 zhubolin 2018-11-8*/
+#undef dev_dbg
+#undef dev_vdbg
+#undef pr_debug
+#undef pr_info
+#define dev_dbg dev_err
+#define dev_vdbg dev_err
+#define pr_debug pr_err
+#define pr_info pr_err
+
 /**
  * Requested USB votes for BUS bandwidth
  *
@@ -116,7 +126,8 @@ enum msm_usb_phy_type {
 	QUSB_ULPI_PHY,
 };
 
-#define IDEV_CHG_MAX	1500
+#define IDEV_CHG_MAX	2000
+#define FLOAT_CHG_MAX	500
 #define IUNIT		100
 #define IDEV_HVDCP_CHG_MAX	1800
 
@@ -240,6 +251,10 @@ struct msm_otg_platform_data {
 
 #define PM_QOS_SAMPLE_SEC	2
 #define PM_QOS_THRESHOLD	400
+//LXF_P400_B01-1812 zhubolin 20181027 Y-cable support bringup
+#ifndef CONFIG_KERNEL_CUSTOM_P407
+#define Y_CABLE_SUPPORT
+#endif
 
 enum msm_otg_phy_reg_mode {
 	USB_PHY_REG_OFF,
@@ -259,8 +274,7 @@ unsigned int lpm_disconnect_thresh = 1000;
 module_param(lpm_disconnect_thresh, uint, 0644);
 MODULE_PARM_DESC(lpm_disconnect_thresh,
 	"Delay before entering LPM on USB disconnect");
-
-static bool floated_charger_enable;
+static bool floated_charger_enable = true;
 module_param(floated_charger_enable, bool, 0644);
 MODULE_PARM_DESC(floated_charger_enable,
 	"Whether to enable floated charger");
@@ -275,10 +289,15 @@ static int dcp_max_current = IDEV_CHG_MAX;
 module_param(dcp_max_current, int, 0644);
 MODULE_PARM_DESC(dcp_max_current, "max current drawn for DCP charger");
 
-static bool chg_detection_for_float_charger;
+static bool chg_detection_for_float_charger = true;
 module_param(chg_detection_for_float_charger, bool, 0644);
 MODULE_PARM_DESC(chg_detection_for_float_charger,
 	"Whether to do PHY based charger detection for float chargers");
+
+/*otg-enable while booting*/
+static bool otg_enable = 1;
+module_param(otg_enable, bool, S_IRUGO | S_IWUSR);
+MODULE_PARM_DESC(otg_enable, "otg_enable or not while booting");
 
 static struct msm_otg *the_msm_otg;
 static bool debug_bus_voting_enabled;
@@ -287,6 +306,10 @@ static struct regulator *hsusb_3p3;
 static struct regulator *hsusb_1p8;
 static struct regulator *hsusb_vdd;
 static struct regulator *vbus_otg;
+//LXF_P400_B01-1812 zhubolin 20181027 Y-cable support bringup
+#ifdef Y_CABLE_SUPPORT
+static struct regulator *hsusb_gpiopull;
+#endif
 static struct power_supply *psy;
 
 static int vdd_val[VDD_VAL_MAX];
@@ -294,6 +317,27 @@ static u32 bus_freqs[USB_NOC_NUM_VOTE][USB_NUM_BUS_CLOCKS]  /*bimc,snoc,pcnoc*/;
 static char bus_clkname[USB_NUM_BUS_CLOCKS][20] = {"bimc_clk", "snoc_clk",
 						"pcnoc_clk"};
 static bool bus_clk_rate_set;
+
+//LXF_P400_B01-1812 zhubolin 20181027 Y-cable support bringup
+#ifdef Y_CABLE_SUPPORT
+#define ID_GROUND 0
+#define ID_T_HUB_WITHOUT_POWER_HIGH 60*1000//0~0.15, normally it's around 0.021V
+#define ID_T_HUB_WITH_POWER_HIGH 600*1000//0.15~0.4, normally 0.544~0.68
+
+enum msm_otg_phy_adcid_state {
+	USB_ID_T_HUB_WITHOUT_POWER_HIGH,
+	USB_ID_T_HUB_WITH_POWER_HIGH,
+	USB_ID_HIGH
+};
+
+int off_mode = 0;
+int ycable_need_support = 0;
+
+static int otg_get_prop_usbid_voltage_now(struct msm_otg *motg);
+static int msm_otg_read_adc_id_state(struct msm_otg *motg);
+int read_otg_id_adc(void);
+void check_y_cable_status(void);
+#endif
 
 static void dbg_inc(unsigned int *idx)
 {
@@ -354,10 +398,31 @@ static int msm_hsusb_ldo_init(struct msm_otg *motg, int init)
 									);
 			goto put_1p8;
 		}
-
+//LXF_P400_B01-1812 zhubolin 20181027 Y-cable support bringup
+#ifdef Y_CABLE_SUPPORT
+		if(ycable_need_support){
+			hsusb_gpiopull = devm_regulator_get(motg->phy.dev, "HSUSB_gpiopull");
+			if (IS_ERR(hsusb_gpiopull)) {
+				dev_err(motg->phy.dev, "unable to get hsusb_gpiopull\n");
+				rc = PTR_ERR(hsusb_gpiopull);
+				goto put_1p8;
+			}
+			rc = regulator_set_voltage(hsusb_gpiopull, USB_PHY_1P8_VOL_MIN,
+					USB_PHY_1P8_VOL_MAX);
+			if (rc) {
+				dev_err(motg->phy.dev, "unable to set voltage level "
+						"for hsusb_gpiopull\n");
+				goto put_gpiopull;
+			}
+		}
+#endif
 		return 0;
 	}
-
+//LXF_P400_B01-1812 zhubolin 20181027 Y-cable support bringup
+#ifdef Y_CABLE_SUPPORT
+put_gpiopull:
+	regulator_set_voltage(hsusb_gpiopull, 0, USB_PHY_1P8_VOL_MAX);
+#endif
 put_1p8:
 	regulator_set_voltage(hsusb_1p8, 0, USB_PHY_1P8_VOL_MAX);
 put_3p3_lpm:
@@ -1312,6 +1377,7 @@ static void msm_otg_exit_phy_retention(struct msm_otg *motg)
 }
 
 static void msm_id_status_w(struct work_struct *w);
+
 static irqreturn_t msm_otg_phy_irq_handler(int irq, void *data)
 {
 	struct msm_otg *motg = data;
@@ -1920,6 +1986,15 @@ static void msm_otg_notify_charger(struct msm_otg *motg, unsigned int mA)
 							motg->chg_type);
 
 	psy_type = get_psy_type(motg);
+
+	//LXF_P400_A21-121 zhubolin 20190826 unistall MTP cause SDP not charge start
+        if((psy_type == POWER_SUPPLY_TYPE_USB) && (mA == 2))
+        {
+                dev_dbg(motg->phy.dev, "SDP 2mA not set\n");
+                return;
+        }
+        //LXF_P400_A21-121 zhubolin 20190826 unistall MTP cause SDP not charge end
+
 	if (psy_type == POWER_SUPPLY_TYPE_USB_FLOAT ||
 		(psy_type == POWER_SUPPLY_TYPE_USB &&
 			motg->enable_sdp_check_timer)) {
@@ -2076,7 +2151,12 @@ static void msm_otg_start_host(struct usb_otg *otg, int on)
 		msm_otg_dbg_log_event(&motg->phy, "HOST OFF",
 				motg->inputs, otg->state);
 		msm_hsusb_vbus_power(motg, 0);
-
+#ifdef Y_CABLE_SUPPORT
+		if(ycable_need_support){
+			cancel_delayed_work_sync(&motg->ycable_work);
+			pr_info("zbl OTG stop scan charger plug in\n");
+		}
+#endif
 		cancel_delayed_work_sync(&motg->perf_vote_work);
 		msm_otg_perf_vote_update(motg, false);
 		pm_qos_remove_request(&motg->pm_qos_req_dma);
@@ -2108,16 +2188,35 @@ static void msm_hsusb_vbus_power(struct msm_otg *motg, bool on)
 {
 	int ret;
 	static bool vbus_is_on;
-
+//LXF_P400_B01-1812 zhubolin 20181027 Y-cable support bringup
+#ifdef Y_CABLE_SUPPORT
+	int adc_id_state = 0;
+#endif
 	msm_otg_dbg_log_event(&motg->phy, "VBUS POWER", on, vbus_is_on);
 	if (vbus_is_on == on)
 		return;
+
+//LXF_P400_B01-1812 zhubolin 20181027 Y-cable support bringup
+#ifdef Y_CABLE_SUPPORT
+	if(ycable_need_support)
+	{
+		adc_id_state = msm_otg_read_adc_id_state(motg);
+		if((adc_id_state == USB_ID_T_HUB_WITH_POWER_HIGH) && !vbus_is_on)
+		{
+			pr_err("external vbus is present, Y cable connected, no need to turn on PMIC VBUS regulator\n");
+			return;
+		}
+	}
+#endif
 
 	if (!vbus_otg) {
 		pr_err("vbus_otg is NULL.");
 		return;
 	}
 
+	if(motg->otg_enable == 0){
+		return;
+	}
 	/*
 	 * if entering host mode tell the charger to not draw any current
 	 * from usb before turning on the boost.
@@ -2125,14 +2224,25 @@ static void msm_hsusb_vbus_power(struct msm_otg *motg, bool on)
 	 * current from the source.
 	 */
 	if (on) {
+#ifndef CONFIG_KERNEL_CUSTOM_P407
+		gpio_direction_output(94,1);
+		mdelay(50);
+#endif
 		ret = regulator_enable(vbus_otg);
 		if (ret) {
 			pr_err("unable to enable vbus_otg\n");
 			return;
 		}
+#ifdef CONFIG_KERNEL_CUSTOM_P407
+		mdelay(40);
+#endif
 		vbus_is_on = true;
 	} else {
 		ret = regulator_disable(vbus_otg);
+#ifndef CONFIG_KERNEL_CUSTOM_P407
+		mdelay(50);
+		gpio_direction_output(94,0);
+#endif
 		if (ret) {
 			pr_err("unable to disable vbus_otg\n");
 			return;
@@ -2539,7 +2649,7 @@ static void msm_chg_detect_work(struct work_struct *w)
 	u32 line_state, dm_vlgc;
 	unsigned long delay = 0;
 
-	dev_dbg(phy->dev, "chg detection work\n");
+	dev_dbg(phy->dev, "chg detection work,state %d, type %d\n", motg->chg_state, motg->chg_type);
 	msm_otg_dbg_log_event(phy, "CHG DETECTION WORK",
 			motg->chg_state, get_pm_runtime_counter(phy->dev));
 
@@ -2641,9 +2751,12 @@ static void msm_chg_detect_work(struct work_struct *w)
 			msm_otg_notify_charger(motg, dcp_max_current);
 		} else if (motg->chg_type == USB_NONCOMPLIANT_CHARGER)
 			msm_otg_notify_charger(motg, dcp_max_current);
-		else if (motg->chg_type == USB_FLOATED_CHARGER ||
-					motg->chg_type == USB_CDP_CHARGER)
+/*LXF_P400_A01-596/LXF_P400_B01/LXF_P400_B01-330-456 zhubolin 2018-12-6 For pogo and float charger current start*/
+		else if (motg->chg_type == USB_CDP_CHARGER)
 			msm_otg_notify_charger(motg, IDEV_CHG_MAX);
+		else if (motg->chg_type == USB_FLOATED_CHARGER)
+			msm_otg_notify_charger(motg, FLOAT_CHG_MAX);//normal float
+/*LXF_P400_A01-596/LXF_P400_B01/LXF_P400_B01-330-456 zhubolin 2018-12-6 For pogo and float charger current end*/
 
 		msm_otg_dbg_log_event(phy, "CHG WORK PUT: CHG_TYPE",
 			motg->chg_type, get_pm_runtime_counter(phy->dev));
@@ -3035,14 +3148,24 @@ static void msm_otg_set_vbus_state(int online)
 	 * 2. Data lines have been cut off from PMI, in which case it provides
 	 *    VBUS notification with FLOAT psy type and we want to do PHY based
 	 *    charger detection by setting 'chg_detection_for_float_charger'.
-	 */
+	 */ 
+	 
+/*LXF_P400_A01-596/LXF_P400_B01/LXF_P400_B01-330-456 zhubolin 2018-12-6 For pogo and float charger current start*/
 	if (test_bit(B_SESS_VLD, &motg->inputs) && !motg->chg_detection) {
 		if ((get_psy_type(motg) == POWER_SUPPLY_TYPE_UNKNOWN) ||
+ 		(get_psy_type(motg) == POWER_SUPPLY_TYPE_USB)){ 
+ 			motg->chg_detection = true; 
+			pr_info("chg_detection:%s\n",__func__); 
+		 } 
+ 	} else { 
+ 		if(test_bit(B_SESS_VLD, &motg->inputs) && !motg->chg_detection) { 
+ 		if ((get_psy_type(motg) == POWER_SUPPLY_TYPE_UNKNOWN) || 
 		    (get_psy_type(motg) == POWER_SUPPLY_TYPE_USB_FLOAT &&
 		     chg_detection_for_float_charger))
 			motg->chg_detection = true;
+		}
 	}
-
+/*LXF_P400_A01-596/LXF_P400_B01/LXF_P400_B01-330-456 zhubolin 2018-12-6 For pogo and float charger current end*/
 	if (motg->chg_detection)
 		queue_delayed_work(motg->otg_wq, &motg->chg_work, 0);
 	else
@@ -3054,13 +3177,41 @@ static void msm_id_status_w(struct work_struct *w)
 	struct msm_otg *motg = container_of(w, struct msm_otg,
 						id_status_work.work);
 	int work = 0;
+//LXF_P400_B01-1812 zhubolin 20181027 Y-cable support bringup
+#ifdef Y_CABLE_SUPPORT
+	int adc_id_state = 0;
+#endif
 
 	dev_dbg(motg->phy.dev, "ID status_w\n");
 
 	if (motg->pdata->pmic_id_irq)
 		motg->id_state = msm_otg_read_pmic_id_state(motg);
 	else if (motg->ext_id_irq)
+//LXF_P400_B01-1812 zhubolin 20181027 Y-cable support bringup
+#ifdef Y_CABLE_SUPPORT
+	if(ycable_need_support){		
+		adc_id_state = msm_otg_read_adc_id_state(motg);
+		if(adc_id_state == USB_ID_T_HUB_WITHOUT_POWER_HIGH)
+		{
+			pr_info("zbl OTG start scan charger plug in\n");
+			queue_delayed_work(motg->otg_wq, &motg->ycable_work,
+				msecs_to_jiffies(3000));
+			motg->id_state = 0;//gpio_get_value(motg->pdata->usb_id_gpio);
+		}else if(adc_id_state == USB_ID_T_HUB_WITH_POWER_HIGH){
+			dev_dbg(motg->phy.dev, "ID status_w,T hub with charger connected\n");
+			motg->id_state = 0;
+		}else{
+			motg->id_state = 1;
+		}
+
+		if((1 == gpio_get_value(124)) && (1 == gpio_get_value(130))) //otg plug out,enable pogo
+			gpio_direction_output(130,0);
+	}else{
 		motg->id_state = gpio_get_value(motg->pdata->usb_id_gpio);
+	}
+#else
+		motg->id_state = gpio_get_value(motg->pdata->usb_id_gpio);
+#endif
 	else if (motg->phy_irq)
 		motg->id_state = msm_otg_read_phy_id_state(motg);
 
@@ -3083,8 +3234,18 @@ static void msm_id_status_w(struct work_struct *w)
 			gpio_direction_output(motg->pdata->switch_sel_gpio, 1);
 		if (test_and_clear_bit(ID, &motg->inputs)) {
 			pr_debug("ID clear\n");
+//LXF_P400_B01-1812 zhubolin 20181027 Y-cable support bringup
+#ifdef Y_CABLE_SUPPORT
+		if(ycable_need_support){
+			clear_bit(B_SESS_VLD, &motg->inputs);
+		}else{
+			if (motg->pdata->phy_id_high_as_peripheral)
+				clear_bit(B_SESS_VLD, &motg->inputs);	
+		}
+#else
 			if (motg->pdata->phy_id_high_as_peripheral)
 				clear_bit(B_SESS_VLD, &motg->inputs);
+#endif
 			msm_otg_dbg_log_event(&motg->phy, "ID CLEAR",
 					motg->inputs, motg->phy.otg->state);
 			work = 1;
@@ -3100,11 +3261,53 @@ static void msm_id_status_w(struct work_struct *w)
 	}
 }
 
+#ifdef Y_CABLE_SUPPORT
+static void otg_mode_charger_detect(struct work_struct *w)
+{
+	struct msm_otg *motg = container_of(w, struct msm_otg,
+						ycable_work.work);
+	int adc_id_state = 0;
+	adc_id_state = msm_otg_read_adc_id_state(motg);
+	if(USB_ID_T_HUB_WITH_POWER_HIGH == adc_id_state)
+	{
+		pr_info("zbl ycable work charger plugin,stop charger detect\n");
+		msm_hsusb_vbus_power(motg, 0);
+		mdelay(50);
+		return;
+	}
+	queue_delayed_work(motg->otg_wq, &motg->ycable_work,
+		msecs_to_jiffies(2000));
+	
+}
+#endif
+//LXF_P400_B01-1812 zhubolin 20181027 Y-cable support bringup
+#define MSM_ID_STATUS_DELAY_YCABLE	50 /* 50msec */
 #define MSM_ID_STATUS_DELAY	5 /* 5msec */
+
 static irqreturn_t msm_id_irq(int irq, void *data)
 {
 	struct msm_otg *motg = data;
+//LXF_P400_B01-1812 zhubolin 20181027 Y-cable support bringup
+#ifdef Y_CABLE_SUPPORT
+	if(ycable_need_support){
+		pr_info("OTG irq trigger\n");
 
+		if(0 == gpio_get_value(124)) //otg plug in,disable pogo
+			gpio_direction_output(130,1);
+
+		/*schedule delayed work for 5msec for ID line state to settle*/
+		queue_delayed_work(motg->otg_wq, &motg->id_status_work,
+				msecs_to_jiffies(MSM_ID_STATUS_DELAY_YCABLE));
+
+		return IRQ_HANDLED;
+	}else{
+		/*schedule delayed work for 5msec for ID line state to settle*/
+		queue_delayed_work(motg->otg_wq, &motg->id_status_work,
+				msecs_to_jiffies(MSM_ID_STATUS_DELAY));
+
+		return IRQ_HANDLED;
+	}
+#endif
 	/*schedule delayed work for 5msec for ID line state to settle*/
 	queue_delayed_work(motg->otg_wq, &motg->id_status_work,
 			msecs_to_jiffies(MSM_ID_STATUS_DELAY));
@@ -3342,7 +3545,66 @@ const struct file_operations msm_otg_dbg_buff_fops = {
 	.llseek = seq_lseek,
 	.release = single_release,
 };
+//LXF_P400_B01-1812 zhubolin 20181027 Y-cable support bringup
+#ifdef Y_CABLE_SUPPORT
+static int otg_get_prop_usbid_voltage_now(struct msm_otg *motg)
+{
 
+	int rc = 0;
+	struct qpnp_vadc_result results;
+
+	if (IS_ERR_OR_NULL(motg->id_vadc_dev)) {
+		motg->id_vadc_dev = qpnp_get_vadc(motg->phy.dev, "usbid");
+		if (IS_ERR(motg->id_vadc_dev))
+                {
+		        pr_err("Unable to get id_vadc_dev.\n");
+			return PTR_ERR(motg->id_vadc_dev);
+                }
+	}
+	rc = qpnp_vadc_read(motg->id_vadc_dev, VADC_AMUX1_GPIO, &results); //0x12=18=VADC_AMUX1_GPIO
+	if (rc) {
+		pr_err("Unable to read usbid rc=%d\n", rc);
+		return 0;
+	} else {
+		pr_err("read usbid results.physical=%lx\n", (long unsigned int)results.physical);
+		return results.physical;
+	}
+}
+
+static int msm_otg_read_adc_id_state(struct msm_otg *motg)
+{
+	int usbid_adc = 0;
+	usbid_adc= otg_get_prop_usbid_voltage_now(motg);
+	dev_dbg(motg->phy.dev, "msm_otg_read_adc_id_state %d\n",usbid_adc);	
+	if(usbid_adc < ID_T_HUB_WITHOUT_POWER_HIGH){
+		return USB_ID_T_HUB_WITHOUT_POWER_HIGH;
+	}else if(usbid_adc < ID_T_HUB_WITH_POWER_HIGH){
+		return USB_ID_T_HUB_WITH_POWER_HIGH;
+	}else{
+		return USB_ID_HIGH;
+	}	
+}
+
+int read_otg_id_adc(void){
+	int ret;
+	struct msm_otg *motg = the_msm_otg;
+	ret = msm_otg_read_adc_id_state(motg);
+	return ret;
+}
+
+void check_y_cable_status(void)
+{
+	struct msm_otg *motg = the_msm_otg;
+	if((0 == gpio_get_value(124)) && !off_mode)
+	{
+		msleep(50);
+		pr_err("reenable VBUS power.\n");
+		msm_hsusb_vbus_power(motg, 1);
+		queue_delayed_work(motg->otg_wq, &motg->ycable_work,
+			msecs_to_jiffies(3000));
+	}
+}
+#endif
 static int msm_otg_dpdm_regulator_enable(struct regulator_dev *rdev)
 {
 	int ret = 0;
@@ -3705,6 +3967,35 @@ static ssize_t dpdm_pulldown_enable_store(struct device *dev,
 static DEVICE_ATTR(dpdm_pulldown_enable, 0644,
 		dpdm_pulldown_enable_show, dpdm_pulldown_enable_store);
 
+static ssize_t otg_enable_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct msm_otg *motg = the_msm_otg;
+
+	if(motg->otg_enable)
+		return snprintf(buf, PAGE_SIZE, "y\n");
+	else
+		return snprintf(buf, PAGE_SIZE, "n\n");
+}
+
+static ssize_t otg_enable_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct msm_otg *motg = the_msm_otg;
+	bool value;
+	int ret;
+
+	ret = strtobool(buf, &value);
+	if (!ret) {
+		motg->otg_enable = value;
+		return count;
+	}
+
+	return ret;
+}
+
+static DEVICE_ATTR_RW(otg_enable);
+
 static int msm_otg_vbus_notifier(struct notifier_block *nb, unsigned long event,
 				void *ptr)
 {
@@ -3892,12 +4183,30 @@ struct msm_otg_platform_data *msm_otg_dt_to_pdata(struct platform_device *pdev)
 			of_get_named_gpio(node, "qcom,sw-sel-gpio", 0);
 	if (!gpio_is_valid(pdata->switch_sel_gpio))
 		pr_debug("switch_sel_gpio is not available\n");
-
+//LXF_P400_B01-1812 zhubolin 20181027 Y-cable support bringup
+#ifdef Y_CABLE_SUPPORT
+	if(ycable_need_support){
+		if (!off_mode){
+			pr_info("bootup charging need to check usb id\n");
+			pdata->usb_id_gpio =
+					of_get_named_gpio(node, "qcom,usbid-gpio", 0);
+			if (!gpio_is_valid(pdata->usb_id_gpio))
+				pr_debug("usb_id_gpio is not available\n");
+		}else{
+			pr_info("off mode charging no need to check usb id\n");
+		}
+	}else{
+			pdata->usb_id_gpio =
+					of_get_named_gpio(node, "qcom,usbid-gpio-noycable", 0);
+			if (!gpio_is_valid(pdata->usb_id_gpio))
+				pr_debug("usb_id_gpio is not available\n");	
+	}
+#else
 	pdata->usb_id_gpio =
 			of_get_named_gpio(node, "qcom,usbid-gpio", 0);
 	if (!gpio_is_valid(pdata->usb_id_gpio))
 		pr_debug("usb_id_gpio is not available\n");
-
+#endif
 	pdata->l1_supported = of_property_read_bool(node,
 				"qcom,hsusb-l1-supported");
 	pdata->enable_ahb2ahb_bypass = of_property_read_bool(node,
@@ -3931,7 +4240,10 @@ struct msm_otg_platform_data *msm_otg_dt_to_pdata(struct platform_device *pdev)
 
 	return pdata;
 }
-
+//LXF_P400_B01-1812 zhubolin 20181027 Y-cable support bringup
+#ifdef Y_CABLE_SUPPORT
+struct device *dev_otg = NULL;
+#endif
 static int msm_otg_probe(struct platform_device *pdev)
 {
 	int ret = 0;
@@ -3945,7 +4257,12 @@ static int msm_otg_probe(struct platform_device *pdev)
 	int id_irq = 0;
 
 	dev_info(&pdev->dev, "msm_otg probe\n");
-
+//LXF_P400_B01-1812 zhubolin 20181027 Y-cable support bringup
+#ifdef Y_CABLE_SUPPORT
+	dev_otg = &(pdev->dev);
+	ycable_need_support = gpio_get_value(127);
+	printk("zbl ycable_need_support is %d\n",ycable_need_support);
+#endif
 	motg = kzalloc(sizeof(struct msm_otg), GFP_KERNEL);
 	if (!motg) {
 		ret = -ENOMEM;
@@ -4171,7 +4488,9 @@ static int msm_otg_probe(struct platform_device *pdev)
 	motg->pdev = pdev;
 	motg->dbg_idx = 0;
 	motg->dbg_lock = __RW_LOCK_UNLOCKED(lck);
-
+    if(otg_enable){
+        motg->otg_enable = 1;
+    }
 	if (motg->pdata->bus_scale_table) {
 		motg->bus_perf_client =
 		    msm_bus_scale_register_client(motg->pdata->bus_scale_table);
@@ -4342,7 +4661,17 @@ static int msm_otg_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "hsusb vreg configuration failed\n");
 		goto free_hsusb_vdd;
 	}
-
+//LXF_P400_B01-1812 zhubolin 20181027 Y-cable support bringup
+#ifdef Y_CABLE_SUPPORT
+	if((NULL != hsusb_gpiopull) && ycable_need_support)
+	{
+		ret = regulator_enable(hsusb_gpiopull);
+		if (ret) {
+			dev_err(&pdev->dev, "unable to enable the hsusb gpiopull\n");
+			goto free_hsusb_vdd;
+		}
+	}
+#endif
 	/* Get pinctrl if target uses pinctrl */
 	motg->phy_pinctrl = devm_pinctrl_get(&pdev->dev);
 	if (IS_ERR(motg->phy_pinctrl)) {
@@ -4377,6 +4706,9 @@ static int msm_otg_probe(struct platform_device *pdev)
 	INIT_DELAYED_WORK(&motg->id_status_work, msm_id_status_w);
 	INIT_DELAYED_WORK(&motg->perf_vote_work, msm_otg_perf_vote_work);
 	INIT_DELAYED_WORK(&motg->sdp_check, check_for_sdp_connection);
+#ifdef Y_CABLE_SUPPORT
+	INIT_DELAYED_WORK(&motg->ycable_work, otg_mode_charger_detect);
+#endif
 	INIT_WORK(&motg->notify_charger_work, msm_otg_notify_charger_work);
 	INIT_WORK(&motg->extcon_register_work, msm_otg_extcon_register_work);
 	motg->otg_wq = alloc_ordered_workqueue("k_otg", WQ_FREEZABLE);
@@ -4392,26 +4724,53 @@ static int msm_otg_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "request irq failed\n");
 		goto destroy_wq;
 	}
+//LXF_P400_B01-1812 zhubolin 20181027 Y-cable support bringup
+#ifdef Y_CABLE_SUPPORT
+	if(0 == ycable_need_support){
+		motg->phy_irq = platform_get_irq_byname(pdev, "phy_irq");
+		if (motg->phy_irq < 0) {
+			dev_dbg(&pdev->dev, "phy_irq is not present\n");
+			motg->phy_irq = 0;
+		} else {
 
+			/* clear all interrupts before enabling the IRQ */
+			writeb_relaxed(0xFF, USB2_PHY_USB_PHY_INTERRUPT_CLEAR0);
+			writeb_relaxed(0xFF, USB2_PHY_USB_PHY_INTERRUPT_CLEAR1);
+
+			writeb_relaxed(0x1, USB2_PHY_USB_PHY_IRQ_CMD);
+			/*
+			 * Databook says 200 usec delay is required for
+			 * clearing the interrupts.
+			 */
+			udelay(200);
+			writeb_relaxed(0x0, USB2_PHY_USB_PHY_IRQ_CMD);
+
+			ret = devm_request_irq(&pdev->dev, motg->phy_irq,
+				msm_otg_phy_irq_handler, IRQF_TRIGGER_RISING,
+				"msm_otg_phy_irq", motg);
+			if (ret < 0) {
+				dev_err(&pdev->dev, "phy_irq request fail %d\n", ret);
+				goto destroy_wq;
+			}
+		}
+	}
+#else
 	motg->phy_irq = platform_get_irq_byname(pdev, "phy_irq");
 	if (motg->phy_irq < 0) {
 		dev_dbg(&pdev->dev, "phy_irq is not present\n");
 		motg->phy_irq = 0;
 	} else {
-
 		/* clear all interrupts before enabling the IRQ */
 		writeb_relaxed(0xFF, USB2_PHY_USB_PHY_INTERRUPT_CLEAR0);
 		writeb_relaxed(0xFF, USB2_PHY_USB_PHY_INTERRUPT_CLEAR1);
-
-		writeb_relaxed(0x1, USB2_PHY_USB_PHY_IRQ_CMD);
+			writeb_relaxed(0x1, USB2_PHY_USB_PHY_IRQ_CMD);
 		/*
 		 * Databook says 200 usec delay is required for
 		 * clearing the interrupts.
 		 */
 		udelay(200);
 		writeb_relaxed(0x0, USB2_PHY_USB_PHY_IRQ_CMD);
-
-		ret = devm_request_irq(&pdev->dev, motg->phy_irq,
+			ret = devm_request_irq(&pdev->dev, motg->phy_irq,
 			msm_otg_phy_irq_handler, IRQF_TRIGGER_RISING,
 			"msm_otg_phy_irq", motg);
 		if (ret < 0) {
@@ -4419,6 +4778,9 @@ static int msm_otg_probe(struct platform_device *pdev)
 			goto destroy_wq;
 		}
 	}
+#endif
+
+
 
 	ret = devm_request_irq(&pdev->dev, motg->async_irq, msm_otg_irq,
 				IRQF_TRIGGER_RISING, "msm_otg", motg);
@@ -4458,8 +4820,12 @@ static int msm_otg_probe(struct platform_device *pdev)
 
 	if (motg->pdata->mode == USB_OTG &&
 		motg->pdata->otg_control == OTG_PMIC_CONTROL &&
+//LXF_P400_B01-1812 zhubolin 20181027 Y-cable support bringup
+#ifdef Y_CABLE_SUPPORT
+		!motg->phy_irq && (!off_mode || !ycable_need_support)) {
+#else
 		!motg->phy_irq) {
-
+#endif
 		if (gpio_is_valid(motg->pdata->usb_id_gpio)) {
 			/* usb_id_gpio request */
 			ret = devm_gpio_request(&pdev->dev,
@@ -4553,6 +4919,7 @@ static int msm_otg_probe(struct platform_device *pdev)
 	motg->caps |= ALLOW_HOST_PHY_RETENTION;
 
 	device_create_file(&pdev->dev, &dev_attr_dpdm_pulldown_enable);
+	device_create_file(&pdev->dev, &dev_attr_otg_enable);
 
 	if (motg->pdata->enable_lpm_on_dev_suspend)
 		motg->caps |= ALLOW_LPM_ON_DEV_SUSPEND;
@@ -4898,6 +5265,19 @@ static struct platform_driver msm_otg_driver = {
 		.of_match_table = msm_otg_dt_match,
 	},
 };
+
+//LXF_P400_B01-1812 zhubolin 20181027 Y-cable support bringup
+#ifdef Y_CABLE_SUPPORT
+static int __init off_mode_charging(char *str)
+{
+	if (!strcmp(str, "charger"))
+		off_mode = 1;
+
+		return 1;
+}
+
+__setup("androidboot.mode=", off_mode_charging);
+#endif
 
 module_platform_driver(msm_otg_driver);
 

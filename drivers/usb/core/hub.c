@@ -26,6 +26,10 @@
 #include <linux/mutex.h>
 #include <linux/random.h>
 #include <linux/pm_qos.h>
+/* LXF_P400_B01-280 add by guofuping 20181029  begin */
+#include <linux/gpio.h>
+#include <linux/of_gpio.h>
+/* LXF_P400_B01-280 add by guofuping 20181029  end */
 
 #include <asm/uaccess.h>
 #include <asm/byteorder.h>
@@ -1795,7 +1799,6 @@ descriptor_error:
 
 	/* We found a hub */
 	dev_info(&intf->dev, "USB hub found\n");
-
 	hub = kzalloc(sizeof(*hub), GFP_KERNEL);
 	if (!hub)
 		return -ENOMEM;
