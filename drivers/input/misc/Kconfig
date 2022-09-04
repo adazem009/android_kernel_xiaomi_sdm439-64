@@ -9,7 +9,10 @@ menuconfig INPUT_MISC
 	  doesn't affect the kernel.
 
 	  If unsure, say Y.
-
+# LXF_P400 add by liuyang 20181027  begin
+source "drivers/input/misc/abov_sar/Kconfig"
+source "drivers/input/misc/ant_check/Kconfig"
+# LXF_P400 add by liuyang 20181027  end
 if INPUT_MISC
 
 config INPUT_88PM860X_ONKEY

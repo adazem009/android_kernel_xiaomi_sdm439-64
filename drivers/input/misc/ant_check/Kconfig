@@ -1,0 +1,9 @@
+#
+# SAR Sensor driver
+#
+
+config ANT_CHECK
+	tristate "ANT check driver"
+	default n
+	help
+	  This is the main file for ANT_CHECK driver.
