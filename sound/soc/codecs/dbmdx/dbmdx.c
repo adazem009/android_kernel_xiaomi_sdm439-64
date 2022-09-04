@@ -5626,7 +5626,7 @@ static int dbmdx_va_ve_send_usecase_config(struct dbmdx_private *p,
 	u32 user_selected_mic_config[4];
 	u16 cur_reg;
 	u16 cur_val;
-#ifdef DBMDX_I2S_STREAMING_SUPPORTED
+#if defined(DBMDX_I2S_STREAMING_SUPPORTED) || defined(VA_VE_TDM_RX_MASTER)
 	u32 cur_io_reg_val;
 #endif
 
