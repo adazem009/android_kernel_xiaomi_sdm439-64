@@ -20,6 +20,42 @@
 #include <linux/of_device.h>
 #include <linux/of.h>
 
+enum __camera_vendor_module_id{
+	MID_NULL = 0,
+	MID_SUNNY,
+	MID_TRULY,
+	MID_A_KERR,
+	MID_LITEARRAY,
+	MID_DARLING,
+	MID_QTECH,
+	MID_OFILM,
+	MID_HUAQUAN,
+	MID_KINGCOM = MID_HUAQUAN,
+	MID_BOOYI,
+	MID_LAIMU,
+	MID_WDSEN,
+	MID_SUNRISE,
+	MID_PRIMAX = 0x17,
+	MID_AVC,
+	MID_LCETRON = 0x1E,
+	MID_HOLITECH = 0x42,
+	MID_QUNHUI = 0x44,
+	MID_MAX
+};
+enum __camera_vendor_vcm_id{
+	VID_NULL = 0,
+	VID_ZERO = 0,
+	VID_ONE = 1,
+	VID_MAX = 0xff
+};
+typedef enum __camera_vendor_module_id camera_vendor_module_id;
+typedef enum __camera_vendor_vcm_id camera_vendor_vcm_id;
+struct vendor_eeprom{
+	char eeprom_name[128];
+	uint8_t module_id;
+};
+#define CAMERA_VENDOR_EEPROM_COUNT_MAX		6
+
 #define MAX_SPECIAL_SUPPORT_SIZE 10
 
 enum msm_camera_device_type_t {

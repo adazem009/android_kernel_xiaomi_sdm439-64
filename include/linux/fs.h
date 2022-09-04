@@ -38,6 +38,8 @@
 #include <asm/byteorder.h>
 #include <uapi/linux/fs.h>
 
+#define DATA_PARTITION_PROTECT_ENABLE 1
+
 struct backing_dev_info;
 struct bdi_writeback;
 struct export_operations;

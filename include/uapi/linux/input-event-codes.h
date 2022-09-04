@@ -336,6 +336,24 @@
 
 #define KEY_MICMUTE		248	/* Mute / unmute the microphone */
 
+// LXF_P400 add by liuyang 20181027 begin
+#define KEY_HALL_OPEN           0x286
+#define KEY_HALL_CLOSE          0x287
+
+#define KEY_ANT_CONNECT         0x292
+#define KEY_ANT_UNCONNECT       0x293
+
+
+#define KEY_CAPSENSE_TOUCHCS0       0x294
+#define KEY_CAPSENSE_TOUCHCS1       0x295
+#define KEY_CAPSENSE_RELEASECS0	    0x296
+#define KEY_CAPSENSE_RELEASECS1	    0x297
+
+// LXF_P400 add by liuyang 20181027 end
+
+// LXF_P400_A01-1887 add by guoyicong 20190311 begin
+#define KEY_GTP_OPEN           0x288
+// LXF_P400_A01-1887 add by guoyicong 20190311 end
 /* Code 255 is reserved for special needs of AT keyboard driver */
 
 #define BTN_MISC		0x100

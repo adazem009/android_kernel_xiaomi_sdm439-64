@@ -337,6 +337,12 @@ enum power_supply_type {
 	POWER_SUPPLY_TYPE_TYPEC,	/* Type-C */
 	POWER_SUPPLY_TYPE_UFP,		/* Type-C UFP */
 	POWER_SUPPLY_TYPE_DFP,		/* TYpe-C DFP */
+/*LXF_P400_B01-456 zhubolin 2019-2-14 pogo charging bringup*/
+	POWER_SUPPLY_TYPE_POGO,
+//LXF_P400_B01-1812 zhubolin 20181027 Y-cable support bringup
+#ifndef CONFIG_KERNEL_CUSTOM_P407
+	POWER_SUPPLY_TYPE_THUB,
+#endif
 };
 
 /* Indicates USB Type-C CC connection status */

@@ -90,6 +90,10 @@ enum usb_chg_type {
 	USB_CDP_CHARGER,
 	USB_NONCOMPLIANT_CHARGER,
 	USB_FLOATED_CHARGER,
+//LXF_P400_B01-1812 zhubolin 20181027 Y-cable support bringup
+#ifndef CONFIG_KERNEL_CUSTOM_P407
+	USB_T_HUB_CHARGER,
+#endif
 };
 
 /**
@@ -188,6 +192,10 @@ struct msm_otg {
 	struct usb_phy phy;
 	struct msm_otg_platform_data *pdata;
 	struct platform_device *pdev;
+//LXF_P400_B01-1812 zhubolin 20181027 Y-cable support bringup
+#ifndef CONFIG_KERNEL_CUSTOM_P407
+	struct qpnp_vadc_chip *id_vadc_dev;
+#endif
 	int irq;
 	int async_irq;
 	int phy_irq;
@@ -216,6 +224,7 @@ struct msm_otg {
 #define A_BUS_SUSPEND	14
 	unsigned long inputs;
 	struct work_struct sm_work;
+	bool otg_enable;
 	bool sm_work_pending;
 	bool resume_pending;
 	atomic_t pm_suspended;
@@ -227,6 +236,9 @@ struct msm_otg {
 	struct workqueue_struct *otg_wq;
 	struct delayed_work chg_work;
 	struct delayed_work id_status_work;
+#ifndef CONFIG_KERNEL_CUSTOM_P407
+	struct delayed_work ycable_work;
+#endif
 	enum usb_chg_state chg_state;
 	enum usb_chg_type chg_type;
 	bool chg_detection;
