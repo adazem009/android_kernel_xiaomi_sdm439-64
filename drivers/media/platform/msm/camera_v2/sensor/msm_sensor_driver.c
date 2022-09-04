@@ -827,7 +827,7 @@ int32_t msm_sensor_driver_probe(void *setting,
   	#ifdef CONFIG_KERNEL_CUSTOM_P407
 		int32_t i;
 	#endif
-	//int32_t i;
+	int32_t i;
 	/* Validate input parameters */
 	if (!setting) {
 		pr_err("failed: slave_info %pK", setting);
