@@ -813,6 +813,11 @@ config QPNP_MISC
 	  and the driver provides an API to check if this interrupt
 	  is available on the current PMIC chip.
 
+config DOCK_DETECT
+        tristate "Longcheer Dock Device Detect driver"
+        help
+          Provides a uevent of dock device when pluged and unpluged.
+
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
 source "drivers/misc/cb710/Kconfig"
